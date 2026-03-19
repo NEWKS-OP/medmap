@@ -295,8 +295,13 @@ class DataMapper:
         PATFAL -> case_id
         PATFOE -> patient_id
         PATADT -> admission_date
+
+        Only renames pure numeric EPA columns (EPA0001), skips annotation
+        columns like EPA0001AN, EPA0001TX, EPAOLDDAT, EPAST0BTS, etc.
         """
         rename_map = {}
+        seen_targets = set()
+
         # Known SAP metadata columns
         sap_meta = {
             "PATFAL": "case_id",
@@ -307,23 +312,27 @@ class DataMapper:
         }
 
         for col in df.columns:
-            # Metadata columns
             if col in sap_meta:
                 rename_map[col] = sap_meta[col]
                 continue
 
-            # EPA numeric columns: EPA0001 -> E0_I_001
+            # Only pure numeric EPA columns: EPA0001 (not EPA0001AN, EPAST0BTS)
             m = re.match(r'^EPA(\d{4,})$', col)
             if m:
                 num = m.group(1)
-                # First digit is always 0 (section E0), rest is item number
                 iid = f"E0_I_{num[1:]}"
-                rename_map[col] = iid
+                # Avoid duplicate target names
+                if iid not in seen_targets:
+                    rename_map[col] = iid
+                    seen_targets.add(iid)
                 continue
 
         if rename_map:
             df = df.rename(columns=rename_map)
             logger.info("Converted %d SAP columns to IID/standard names", len(rename_map))
+
+        # Drop duplicate columns (keep first)
+        df = df.loc[:, ~df.columns.duplicated()]
         return df
 
     def _normalize_epac_german(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -341,10 +350,6 @@ class DataMapper:
         if "FallID" not in df.columns or "SID" not in df.columns:
             return df
 
-        # Collect extra columns to preserve (PID, Station, etc.)
-        meta_cols = [c for c in df.columns
-                     if c not in ("SID", "SID_value")]
-        # Keep first occurrence of meta per FallID
         try:
             # Pivot: each SID becomes a column with SID_value as value
             pivoted = df.pivot_table(
@@ -355,11 +360,18 @@ class DataMapper:
             ).reset_index()
             pivoted.columns.name = None
 
-            # Merge back metadata columns
-            if len(meta_cols) > 1:
-                meta = df[meta_cols].drop_duplicates(subset=["FallID"], keep="first")
-                pivoted = pivoted.merge(meta, on="FallID", how="left",
-                                        suffixes=("", "_meta"))
+            # Merge back metadata columns (PID, Station, etc.)
+            # Only add columns not already in pivoted
+            meta_cols = [c for c in df.columns
+                         if c not in ("SID", "SID_value", "FallID")]
+            if meta_cols:
+                meta = df[["FallID"] + meta_cols].drop_duplicates(
+                    subset=["FallID"], keep="first"
+                )
+                for col in meta_cols:
+                    if col not in pivoted.columns:
+                        meta_map = dict(zip(meta["FallID"], meta[col]))
+                        pivoted[col] = pivoted["FallID"].map(meta_map)
 
             # Rename SID columns to IID codes using decoder
             sid_map = self.sid_to_iid
@@ -372,11 +384,14 @@ class DataMapper:
                     pivoted = pivoted.rename(columns=rename)
                     logger.info("Decoded %d SID columns to IID codes", len(rename))
 
-            # Rename FallID to case_id
-            pivoted = pivoted.rename(columns={"FallID": "case_id"})
-            if "PID" in pivoted.columns:
-                pivoted = pivoted.rename(columns={"PID": "patient_id"})
+            # Rename FallID to case_id, PID to patient_id
+            pivoted = pivoted.rename(columns={
+                "FallID": "case_id",
+                "PID": "patient_id",
+            })
 
+            # Drop any duplicate columns
+            pivoted = pivoted.loc[:, ~pivoted.columns.duplicated()]
             return pivoted
         except Exception as e:
             self.mapping_warnings.append(f"epaAC pivot failed: {e}")
@@ -395,13 +410,16 @@ class DataMapper:
 
         # Map columns that match target schema pattern (E0_I_XXX -> coE0IXXX)
         # SQL schema uses exact digit count from IID (no padding): E0_I_001 -> coE0I001
+        # Deduplicate df columns first
+        df = df.loc[:, ~df.columns.duplicated()]
         for col in df.columns:
             m = re.match(r'^(E\d+)_I_(\d+)$', col)
             if m:
                 target = f"co{m.group(1)}I{m.group(2)}"
-                col_map[target] = df[col]
+                if target not in col_map:
+                    col_map[target] = df[col]
                 continue
-            if col.startswith("co"):
+            if col.startswith("co") and col not in col_map:
                 col_map[col] = df[col]
 
         # Map known German columns to target
@@ -432,7 +450,12 @@ class DataMapper:
             self.mapping_warnings.append("epaAC mapping produced no valid rows")
             return pd.DataFrame()
 
-        result = pd.DataFrame(col_map)
+        # Use .values to avoid index mismatch issues between Series
+        n = len(list(col_map.values())[0])
+        result = pd.DataFrame(
+            {k: v.values if hasattr(v, 'values') else v for k, v in col_map.items()},
+            index=range(n),
+        )
         return result
 
     def map_epac(self, dfs: list[pd.DataFrame]) -> pd.DataFrame:
@@ -442,6 +465,7 @@ class DataMapper:
 
         all_mapped = []
         for df in dfs:
+            df = df.copy().reset_index(drop=True)
             fmt = self._detect_epac_format(df)
             source = df.attrs.get("source_file", "unknown")
             logger.info("epaAC format for %s: %s", source, fmt)
