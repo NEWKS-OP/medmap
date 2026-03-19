@@ -21,6 +21,7 @@ async def upload_files(files: list[UploadFile] = File(...)):
 
     ingester = DataIngester()
     results = []
+    logger.info("Received %d files for upload", len(files))
 
     for upload in files:
         try:
@@ -31,6 +32,7 @@ async def upload_files(files: list[UploadFile] = File(...)):
                 tmp_path = tmp.name
 
             try:
+                logger.info("Processing uploaded file: %s", upload.filename)
                 df, result = ingester.load(tmp_path, original_filename=upload.filename)
                 results.append({
                     "source_file": upload.filename,

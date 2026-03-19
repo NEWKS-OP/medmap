@@ -126,6 +126,6 @@ def get_correction_history_list() -> list[dict]:
 
 # ── Helper to convert sqlite3.Row to dict ────────────
 
-def rows_to_dicts(rows: list) -> list[dict]:
+def rows_to_dicts(rows: list[object]) -> list[dict]:
     """Convert a list of sqlite3.Row objects to a list of dicts."""
     return [dict(row) for row in rows]

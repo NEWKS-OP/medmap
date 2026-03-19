@@ -275,7 +275,7 @@ async def get_patient_medications(case_id: str) -> list[dict]:
 
 
 @router.get("/{case_id}/nursing")
-async def get_patient_nursing(case_id: str):
+async def get_patient_nursing(case_id: str) -> list[dict]:
     """Get nursing reports for a patient."""
     db = get_db()
     try:
@@ -307,7 +307,7 @@ async def get_patient_nursing(case_id: str):
 
 
 @router.get("/{case_id}/convergence")
-async def get_patient_convergence(case_id: str):
+async def get_patient_convergence(case_id: str) -> dict:
     """Get convergence score for a patient (computed on-the-fly)."""
     db = get_db()
     try:
@@ -391,7 +391,7 @@ async def get_patient_convergence(case_id: str):
 
 
 @router.get("/{case_id}/passports")
-async def get_patient_passports(case_id: str):
+async def get_patient_passports(case_id: str) -> list[dict]:
     """Get data passports for a patient."""
     db = get_db()
     try:

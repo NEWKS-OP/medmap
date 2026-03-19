@@ -79,6 +79,7 @@ async def start_pipeline(body: dict = Body(default={"data_folder": "dirty"})):
         daemon=True,
     )
     thread.start()
+    logger.info("Pipeline thread started for folder: %s", data_folder)
 
     return asdict(pipeline_state.get_progress())
 

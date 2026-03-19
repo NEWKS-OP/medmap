@@ -110,7 +110,7 @@ def _get_column_mappings(db, badge=None, source=None, status=None, limit=100) ->
 
 
 @router.get("/stats")
-async def get_agent_stats():
+async def get_agent_stats() -> dict:
     """Get agent statistics."""
     db = get_db()
     return _compute_agent_stats(db)
