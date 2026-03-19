@@ -59,8 +59,8 @@ class DataIngester:
             confidence = result.get("confidence", 0)
             if encoding and confidence > 0.5:
                 return encoding
-        except Exception:
-            pass
+        except (OSError, IOError) as e:
+            logger.debug("chardet detection failed for %s: %s", filepath, e)
 
         for enc in ["utf-8", "latin-1", "cp1252"]:
             try:
@@ -501,8 +501,8 @@ class DataIngester:
                                     chunk["FallEvent"], errors="coerce"
                                 ).sum()
                             )
-                        except Exception:
-                            pass
+                        except (ValueError, TypeError) as e:
+                            logger.debug("FallEvent sum failed in chunk %d: %s", chunk_num, e)
                     pid_col = None
                     for c in ["patient_id", "PatientID"]:
                         if c in chunk.columns:

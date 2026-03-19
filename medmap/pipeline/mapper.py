@@ -458,9 +458,9 @@ class DataMapper:
 
         # Map known German columns to target
         german_to_target = {
-            "height": "coE0I005",
-            "weight": "coE0I004",
-            "bmi": "coE0I006",
+            "height": "coE0I015",
+            "weight": "coE0I014",
+            "bmi": "coE0I005",
             "admission_date": "coE2I223",
             "discharge_date": "coE2I228",
             "age_years": "coE2I224",
@@ -667,8 +667,13 @@ class DataMapper:
         if col not in df.columns:
             return None
         val = df.at[idx, col]
-        if pd.isna(val) if isinstance(val, float) else val is None:
+        if val is None:
             return None
+        try:
+            if pd.isna(val):
+                return None
+        except (TypeError, ValueError):
+            pass
         s = str(val).strip()
         return s if s else None
 

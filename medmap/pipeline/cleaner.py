@@ -99,6 +99,9 @@ class DataCleaner:
         # 2.4 Clean clinical numeric values
         df = self._clean_clinical_numerics(df, source_file, file_type)
 
+        # 2.4b Clean device-specific numeric columns (binary, movement index)
+        df = self._clean_device_numerics(df, source_file, file_type)
+
         # 2.5 Normalize gender
         df = self._normalize_gender(df, source_file, file_type)
 
@@ -326,6 +329,73 @@ class DataCleaner:
                     df.at[idx, col] = np.nan
                 elif num_val is not None and not isinstance(df.at[idx, col], float):
                     # Ensure it's stored as numeric
+                    df.at[idx, col] = num_val
+        return df
+
+    # Device-specific numeric columns that need special char stripping
+    DEVICE_NUMERIC_COLS = {
+        "fall_event_0_1": (0, 1),
+        "bed_exit_detected_0_1": (0, 1),
+        "movement_index_0_100": (0, 100),
+        "micro_movements_count": (0, 100000),
+        "post_fall_immobility_minutes": (0, 1440),
+        "accel_x": (-100, 100),
+        "accel_y": (-100, 100),
+        "accel_z": (-100, 100),
+        "accel_magnitude": (0, 200),
+        "movement_score": (0, 100),
+        "pressure_zone_1": (0, 10000),
+        "pressure_zone_2": (0, 10000),
+        "pressure_zone_3": (0, 10000),
+        "pressure_zone_4": (0, 10000),
+        "is_prn_0_1": (0, 1),
+    }
+
+    def _clean_device_numerics(self, df, source_file, file_type):
+        """Clean device-specific numeric columns: strip special chars, coerce to float."""
+        for col, (low, high) in self.DEVICE_NUMERIC_COLS.items():
+            if col not in df.columns:
+                continue
+            # Skip columns already in CLINICAL_RANGES (handled elsewhere)
+            if col in CLINICAL_RANGES:
+                continue
+
+            for idx in df.index:
+                val = df.at[idx, col]
+                if pd.isna(val) if isinstance(val, float) else val is None:
+                    continue
+
+                num_val = self._try_parse_numeric(val)
+                if num_val is None:
+                    # Strip special chars and retry
+                    cleaned_str = SPECIAL_CHARS_PATTERN.sub("", str(val)).strip().replace(",", ".")
+                    try:
+                        num_val = float(cleaned_str)
+                    except (ValueError, TypeError):
+                        self._log_change(
+                            source_file, df, idx, file_type, col,
+                            str(val), None,
+                            "NON_NUMERIC_CLEANED", Severity.HIGH, ActionTaken.QUARANTINE,
+                        )
+                        df.at[idx, col] = np.nan
+                        continue
+
+                    self._log_change(
+                        source_file, df, idx, file_type, col,
+                        str(val), str(num_val),
+                        "SPECIAL_CHARS_REMOVED", Severity.LOW, ActionTaken.AUTO_CORRECT,
+                    )
+                    df.at[idx, col] = num_val
+
+                # Validate range
+                if num_val is not None and (num_val < low or num_val > high):
+                    self._log_change(
+                        source_file, df, idx, file_type, col,
+                        str(val), None,
+                        "DEVICE_VALUE_OUTLIER", Severity.HIGH, ActionTaken.QUARANTINE,
+                    )
+                    df.at[idx, col] = np.nan
+                elif num_val is not None and not isinstance(df.at[idx, col], float):
                     df.at[idx, col] = num_val
         return df
 

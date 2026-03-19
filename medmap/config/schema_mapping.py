@@ -274,7 +274,7 @@ ICD10_MAPPING = {
     "secondary_icd10_codes": "coSecondary_icd10_codes",
     "secondary_icd10_descriptions_en": "coSecondary_icd10_descriptions_en",
     "ops_codes": "coOps_codes",
-    "ops_descriptions_en": "ops_descriptions_en",
+    "ops_descriptions_en": "coOps_descriptions_en",
 }
 
 DEVICE_MOTION_MAPPING = {
@@ -331,13 +331,13 @@ MEDICATION_MAPPING = {
     "order_stop_datetime": "coOrder_stop_datetime",
     "is_prn_0_1": "coIs_prn_0_1",
     "indication": "coIndication",
-    "prescriber_role": "prescriber_role",
-    "order_status": "order_status",
-    "administration_datetime": "administration_datetime",
-    "administered_dose": "administered_dose",
-    "administered_unit": "administered_unit",
-    "administration_status": "administration_status",
-    "note": "note",
+    "prescriber_role": "coPrescriber_role",
+    "order_status": "coOrder_status",
+    "administration_datetime": "coAdministration_datetime",
+    "administered_dose": "coAdministered_dose",
+    "administered_unit": "coAdministered_unit",
+    "administration_status": "coAdministration_status",
+    "note": "coNote",
 }
 
 NURSING_MAPPING = {
