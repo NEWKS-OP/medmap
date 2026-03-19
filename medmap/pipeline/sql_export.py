@@ -417,6 +417,67 @@ class SQLExporter:
     # HELPERS
     # ──────────────────────────────────────────────
 
+    def enrich_nursing_with_nlp(self) -> int:
+        """Add NLP-extracted columns to nursing table and populate them."""
+        if not self.conn:
+            return 0
+
+        from pipeline.nlp import analyze_note, normalize_shift
+
+        # Add NLP columns if not present
+        existing_cols = {row[1] for row in self.conn.execute(
+            "PRAGMA table_info(tbImportNursingDailyReportsData)"
+        ).fetchall()}
+
+        nlp_cols = {
+            "coPain_level_extracted": "INTEGER",
+            "coMobility_extracted": "TEXT",
+            "coWound_grade_extracted": "TEXT",
+            "coDeterioration_flag": "INTEGER",
+            "coDeterioration_signs": "TEXT",
+        }
+
+        for col_name, col_type in nlp_cols.items():
+            if col_name not in existing_cols:
+                self.conn.execute(
+                    f"ALTER TABLE tbImportNursingDailyReportsData ADD COLUMN {col_name} {col_type}"
+                )
+
+        # Populate NLP columns
+        rows = self.conn.execute(
+            "SELECT coId, coNursing_note_free_text, coShift FROM tbImportNursingDailyReportsData"
+        ).fetchall()
+
+        updated = 0
+        for row in rows:
+            note_text = row[1] or ""
+            if not note_text:
+                continue
+
+            nlp = analyze_note(note_text)
+            self.conn.execute(
+                """UPDATE tbImportNursingDailyReportsData
+                   SET coPain_level_extracted = ?,
+                       coMobility_extracted = ?,
+                       coWound_grade_extracted = ?,
+                       coDeterioration_flag = ?,
+                       coDeterioration_signs = ?
+                   WHERE coId = ?""",
+                (
+                    nlp["pain_level"],
+                    nlp["mobility_status"],
+                    nlp["wound_grade"],
+                    1 if nlp["deterioration_flag"] else 0,
+                    ",".join(nlp["deterioration_signs"]) if nlp["deterioration_signs"] else None,
+                    row[0],
+                ),
+            )
+            updated += 1
+
+        self.conn.commit()
+        logger.info("NLP enrichment: updated %d nursing rows", updated)
+        return updated
+
     @staticmethod
     def _to_sqlite_value(v):
         """Convert a single value to a sqlite3-compatible Python type."""
@@ -605,6 +666,9 @@ class SQLExporter:
             ]
             passport_count = self.insert_data_passports(significant)
 
+        # Enrich nursing data with NLP extraction
+        nlp_enriched = self.enrich_nursing_with_nlp()
+
         # Create indexes for API query performance
         self._create_indexes()
 
@@ -613,6 +677,7 @@ class SQLExporter:
             "tables": insert_results,
             "audit_log_entries": audit_count,
             "data_passports": passport_count,
+            "nlp_enriched_rows": nlp_enriched,
             "total_rows": sum(insert_results.values()),
         }
 

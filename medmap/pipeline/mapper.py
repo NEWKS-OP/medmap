@@ -642,11 +642,13 @@ class DataMapper:
                 lambda v: self._extract_pid_numeric(v) if v is not None else None
             )
 
-        # Convert age to int
+        # Convert age to int and clamp to valid range (0-120)
         if "coAgeYears" in result.columns:
             result["coAgeYears"] = pd.to_numeric(
                 result["coAgeYears"], errors="coerce"
-            ).astype("Int64")
+            )
+            result["coAgeYears"] = result["coAgeYears"].clip(lower=0, upper=120)
+            result["coAgeYears"] = result["coAgeYears"].astype("Int64")
 
         logger.info("Built tbCaseData: %d cases", len(result))
         return result

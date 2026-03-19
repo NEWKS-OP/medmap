@@ -142,6 +142,28 @@ async def get_ward_scores() -> list[dict]:
         return []
 
 
+def _nlp_report_section(db: object) -> str:
+    """Generate NLP section for the quality report."""
+    try:
+        cols = {row[1] for row in db.execute("PRAGMA table_info(tbImportNursingDailyReportsData)").fetchall()}
+        if "coPain_level_extracted" not in cols:
+            return "- NLP enrichment not yet applied."
+
+        total = db.execute("SELECT COUNT(*) as cnt FROM tbImportNursingDailyReportsData").fetchone()["cnt"]
+        pain = db.execute("SELECT COUNT(*) as cnt FROM tbImportNursingDailyReportsData WHERE coPain_level_extracted IS NOT NULL").fetchone()["cnt"]
+        det = db.execute("SELECT COUNT(*) as cnt FROM tbImportNursingDailyReportsData WHERE coDeterioration_flag = 1").fetchone()["cnt"]
+        wound = db.execute("SELECT COUNT(*) as cnt FROM tbImportNursingDailyReportsData WHERE coWound_grade_extracted IS NOT NULL").fetchone()["cnt"]
+
+        return (
+            f"- **Total nursing notes:** {total:,}\n"
+            f"- **Pain mentions extracted:** {pain:,}\n"
+            f"- **Deterioration flagged:** {det:,}\n"
+            f"- **Wound assessments:** {wound:,}"
+        )
+    except Exception:
+        return "- NLP stats unavailable."
+
+
 @router.post("/generate-report")
 async def generate_report() -> dict:
     """Generate a quality report in Markdown format."""
@@ -181,6 +203,9 @@ async def generate_report() -> dict:
 
 ## Top Error Categories
 {top_errors_str}
+
+## NLP Analysis (Nursing Notes)
+{_nlp_report_section(db)}
 
 ## Recommendation
 Review quarantined values in the Corrections page and validate critical alerts in the Alerts page.

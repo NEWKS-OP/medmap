@@ -23,6 +23,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter(responses={200: {"description": "Patient data"}})
 
 
+def _table_has_column(db: object, table: str, column: str) -> bool:
+    """Check if a table has a specific column."""
+    try:
+        cols = {row[1] for row in db.execute(f"PRAGMA table_info({table})").fetchall()}
+        return column in cols
+    except Exception:
+        return False
+
+
 def _find_case(db: object, case_id: str):
     """Find a case by coCaseIdAlpha or coId.
 
@@ -289,6 +298,35 @@ async def get_patient_nursing(case_id: str) -> list[dict]:
         if not case:
             return []
 
+        # Try to use pre-computed NLP columns first
+        has_nlp_cols = _table_has_column(db, "tbImportNursingDailyReportsData", "coPain_level_extracted")
+
+        if has_nlp_cols:
+            rows = db.execute(
+                """SELECT coReport_date, coShift, coNursing_note_free_text,
+                          coPain_level_extracted, coMobility_extracted,
+                          coWound_grade_extracted, coDeterioration_flag,
+                          coDeterioration_signs
+                   FROM tbImportNursingDailyReportsData WHERE coCaseId = ?""",
+                (case["coId"],),
+            ).fetchall()
+
+            return [
+                {
+                    "case_id": case_id,
+                    "shift": normalize_shift(r["coShift"] or ""),
+                    "report_date": r["coReport_date"] or "",
+                    "pain_level": r["coPain_level_extracted"],
+                    "mobility_status": r["coMobility_extracted"],
+                    "wound_grade": r["coWound_grade_extracted"],
+                    "deterioration_flag": bool(r["coDeterioration_flag"]),
+                    "deterioration_signs": (r["coDeterioration_signs"] or "").split(",") if r["coDeterioration_signs"] else [],
+                    "note_preview": ((r["coNursing_note_free_text"] or "")[:200]),
+                }
+                for r in rows
+            ]
+
+        # Fallback: compute NLP on-the-fly
         rows = db.execute(
             "SELECT coReport_date, coShift, coNursing_note_free_text FROM tbImportNursingDailyReportsData WHERE coCaseId = ?",
             (case["coId"],),

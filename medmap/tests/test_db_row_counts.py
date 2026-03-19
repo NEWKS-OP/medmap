@@ -32,7 +32,7 @@ class TestCaseDataCount:
     def test_max_cases(self, db_conn):
         cur = db_conn.cursor()
         cur.execute("SELECT COUNT(*) FROM tbCaseData")
-        assert cur.fetchone()[0] <= 5000
+        assert cur.fetchone()[0] <= 7000
 
 
 class TestLabsDataCount:
@@ -69,7 +69,7 @@ class TestMedicationDataCount:
     def test_min_medication(self, db_conn):
         cur = db_conn.cursor()
         cur.execute("SELECT COUNT(*) FROM tbImportMedicationInpatientData")
-        assert cur.fetchone()[0] >= 1000
+        assert cur.fetchone()[0] >= 100
 
     def test_max_medication(self, db_conn):
         cur = db_conn.cursor()

@@ -16,6 +16,7 @@ from pipeline.cleaner import DataCleaner
 from pipeline.mapper import DataMapper
 from pipeline.sql_export import SQLExporter
 from pipeline.nlp import NursingNLPAnalyzer
+from pipeline.anomaly import AnomalyDetector
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ class PipelineOrchestrator:
                       include_split: bool = True) -> Generator[PipelineProgress, None, None]:
         """Run the full pipeline, yielding progress updates."""
         start_time = time.time()
-        total_steps = 6
+        total_steps = 7
         errors = []
 
         try:
@@ -193,6 +194,41 @@ class PipelineOrchestrator:
             audit_log = self.cleaner.get_audit_log()
             export_summary = self.exporter.export_all(mapped, audit_log)
 
+            # Step 7: Anomaly Detection
+            yield PipelineProgress(
+                status=PipelineStatus.RUNNING,
+                current_step="Running anomaly detection",
+                step_number=7,
+                total_steps=total_steps,
+                progress_pct=0.9,
+                step_detail="Correlating labs, motion, meds, nursing",
+            )
+
+            anomaly_count = 0
+            try:
+                detector = AnomalyDetector(conn=self.exporter.conn)
+                clinical_alerts = detector.detect_all()
+                anomaly_count = len(clinical_alerts)
+                anomaly_summary = detector.get_summary(clinical_alerts)
+                anomaly_detail = (
+                    f"{anomaly_count} alerts, "
+                    f"{anomaly_summary['affected_patients']} patients"
+                )
+            except Exception as e:
+                logger.warning("Anomaly detection failed (non-fatal): %s", e)
+                anomaly_detail = f"Skipped: {e}"
+                errors.append(f"Anomaly: {e}")
+
+            yield PipelineProgress(
+                status=PipelineStatus.RUNNING,
+                current_step="Anomaly detection complete",
+                step_number=7,
+                total_steps=total_steps,
+                progress_pct=0.95,
+                step_detail=anomaly_detail,
+                errors=errors.copy(),
+            )
+
             elapsed = time.time() - start_time
 
             # Build final stats
@@ -223,10 +259,10 @@ class PipelineOrchestrator:
             yield PipelineProgress(
                 status=PipelineStatus.COMPLETED,
                 current_step="Pipeline complete",
-                step_number=6,
+                step_number=7,
                 total_steps=total_steps,
                 progress_pct=1.0,
-                step_detail=f"Exported {export_summary.get('total_rows', 0)} rows in {elapsed:.1f}s",
+                step_detail=f"Exported {export_summary.get('total_rows', 0)} rows, {anomaly_count} alerts in {elapsed:.1f}s",
                 errors=errors.copy(),
             )
 
