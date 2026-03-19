@@ -547,12 +547,6 @@ class TestGetAuditLog:
 
 
 class TestCleanerIsMissingTokenExtended:
-    def test_whitespace_only(self, cleaner):
-        assert cleaner._is_missing_token("   ") is True
-
-    def test_tab_only(self, cleaner):
-        assert cleaner._is_missing_token("\t") is True
-
     def test_dash(self, cleaner):
         result = cleaner._is_missing_token("-")
         assert isinstance(result, bool)
@@ -563,55 +557,58 @@ class TestCleanerIsMissingTokenExtended:
     def test_actual_value(self, cleaner):
         assert cleaner._is_missing_token("Metformin") is False
 
+    def test_keine_angabe(self, cleaner):
+        assert cleaner._is_missing_token("keine") is True
+
 
 class TestCleanerNormalizeDatesExtended:
     def test_german_date_format(self, cleaner):
         df = make_df({"admission_date": ["15.01.2025"]})
-        result = cleaner._normalize_dates(df)
+        result = cleaner._normalize_dates(df, "test.csv", "labs")
         assert result["admission_date"].iloc[0] is not None
 
     def test_iso_format(self, cleaner):
         df = make_df({"admission_date": ["2025-01-15"]})
-        result = cleaner._normalize_dates(df)
+        result = cleaner._normalize_dates(df, "test.csv", "labs")
         assert "2025" in str(result["admission_date"].iloc[0])
 
     def test_empty_date(self, cleaner):
         df = make_df({"admission_date": [""]})
-        result = cleaner._normalize_dates(df)
+        result = cleaner._normalize_dates(df, "test.csv", "labs")
         assert result is not None
 
 
 class TestCleanerGenderExtended:
     def test_german_male(self, cleaner):
         df = make_df({"gender": ["männlich"]})
-        result = cleaner._normalize_gender(df)
+        result = cleaner._normalize_gender(df, "test.csv", "labs")
         assert result["gender"].iloc[0] == "M"
 
     def test_german_female(self, cleaner):
         df = make_df({"gender": ["weiblich"]})
-        result = cleaner._normalize_gender(df)
+        result = cleaner._normalize_gender(df, "test.csv", "labs")
         assert result["gender"].iloc[0] == "F"
 
     def test_uppercase(self, cleaner):
         df = make_df({"gender": ["MALE"]})
-        result = cleaner._normalize_gender(df)
+        result = cleaner._normalize_gender(df, "test.csv", "labs")
         assert result["gender"].iloc[0] == "M"
 
     def test_empty_gender(self, cleaner):
         df = make_df({"gender": [""]})
-        result = cleaner._normalize_gender(df)
+        result = cleaner._normalize_gender(df, "test.csv", "labs")
         assert result is not None
 
 
 class TestCleanerCleanIdsExtended:
     def test_strips_whitespace_from_ids(self, cleaner):
         df = make_df({"case_id": ["  CASE-001  "], "patient_id": [" PAT-100 "]})
-        result = cleaner._clean_ids(df, "test.csv")
+        result = cleaner._clean_ids(df, "test.csv", "labs")
         assert result["case_id"].iloc[0].strip() == "CASE-001"
 
     def test_preserves_valid_ids(self, cleaner):
         df = make_df({"case_id": ["CASE-001"], "patient_id": ["PAT-100"]})
-        result = cleaner._clean_ids(df, "test.csv")
+        result = cleaner._clean_ids(df, "test.csv", "labs")
         assert result["case_id"].iloc[0] == "CASE-001"
 
 

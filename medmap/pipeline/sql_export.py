@@ -165,10 +165,27 @@ class SQLExporter:
             logger.warning("Schema file not found: %s", SQL_SCHEMA_PATH)
             self._create_tables_from_mapped()
 
+        # Add missing columns that the mapper produces but aren't in the schema
+        self._add_column_if_missing("tbCaseData", "coCaseIdAlpha", "TEXT")
+
         # Always create extra tables
         self._create_audit_log_table()
         self._create_data_passport_table()
         self.conn.commit()
+
+    def _add_column_if_missing(self, table_name: str, col_name: str,
+                                col_type: str = "TEXT"):
+        """Add a column to a table if it doesn't already exist."""
+        try:
+            existing = self._get_table_columns(table_name)
+            if col_name not in existing:
+                self.conn.execute(
+                    f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}"
+                )
+                logger.info("Added column %s to %s", col_name, table_name)
+        except sqlite3.Error as e:
+            logger.warning("Could not add column %s to %s: %s",
+                           col_name, table_name, e)
 
     def _create_tables_from_mapped(self):
         """Fallback: create tables dynamically from mapped DataFrames."""
@@ -243,22 +260,27 @@ class SQLExporter:
             logger.warning("Table %s has no columns or doesn't exist", table_name)
             return 0
 
-        # Find columns to exclude (autoincrement primary key)
+        # Exclude autoincrement PK only if the DataFrame doesn't provide it
+        # (e.g., tbCaseData provides coId as the numeric case_id for FK references)
         pk_col = "coId"
-        insert_cols = [c for c in table_cols if c != pk_col]
+        if pk_col in df.columns:
+            insert_cols = list(table_cols)
+        else:
+            insert_cols = [c for c in table_cols if c != pk_col]
 
-        # Match DataFrame columns to table columns
+        # Match DataFrame columns to table columns (case-sensitive first)
         df_cols = set(df.columns)
         matched_cols = [c for c in insert_cols if c in df_cols]
 
-        if not matched_cols:
-            # Try case-insensitive matching
+        # Also try case-insensitive matching for remaining unmatched columns
+        unmatched_schema = [c for c in insert_cols if c not in df_cols]
+        if unmatched_schema:
             df_cols_lower = {c.lower(): c for c in df.columns}
-            matched_cols = []
-            for tc in insert_cols:
-                if tc.lower() in df_cols_lower:
+            for tc in unmatched_schema:
+                df_col = df_cols_lower.get(tc.lower())
+                if df_col and df_col not in [c for c in matched_cols]:
+                    df = df.rename(columns={df_col: tc})
                     matched_cols.append(tc)
-                    df = df.rename(columns={df_cols_lower[tc.lower()]: tc})
 
         if not matched_cols:
             logger.warning("No matching columns for %s", table_name)

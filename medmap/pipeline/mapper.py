@@ -567,7 +567,9 @@ class DataMapper:
         rows = []
         for case_id, info in cases.items():
             row = {"coCaseIdAlpha": case_id}
-            row["coId"] = self._extract_case_id_numeric(case_id)
+            numeric_id = self._extract_case_id_numeric(case_id)
+            row["coId"] = numeric_id
+            row["coE2I222"] = numeric_id  # Fall/Case ID
             row["coPatientId"] = info.get("patient_id")
             row["coGender"] = info.get("gender")
             row["coAgeYears"] = info.get("age_years")

@@ -454,31 +454,36 @@ class TestTableInsertOrder:
 class TestTsqlConversionEdgeCases:
     def test_nvarchar_any_length(self):
         exporter = SQLExporter(db_path="/tmp/test_edge.db")
-        result = exporter._convert_tsql_to_sqlite(
+        results = exporter._convert_tsql_to_sqlite(
             "CREATE TABLE t (col nvarchar(500) NOT NULL)"
         )
-        assert "TEXT" in result
+        # Returns a list of statements
+        combined = " ".join(results) if isinstance(results, list) else results
+        assert "TEXT" in combined
 
     def test_decimal_conversion(self):
         exporter = SQLExporter(db_path="/tmp/test_edge2.db")
-        result = exporter._convert_tsql_to_sqlite(
+        results = exporter._convert_tsql_to_sqlite(
             "CREATE TABLE t (col decimal(18,2) NULL)"
         )
-        assert "REAL" in result
+        combined = " ".join(results) if isinstance(results, list) else results
+        assert "REAL" in combined
 
     def test_identity_removal(self):
         exporter = SQLExporter(db_path="/tmp/test_edge3.db")
-        result = exporter._convert_tsql_to_sqlite(
+        results = exporter._convert_tsql_to_sqlite(
             "CREATE TABLE t (id int IDENTITY(1,1) PRIMARY KEY)"
         )
-        assert "IDENTITY" not in result
+        combined = " ".join(results) if isinstance(results, list) else results
+        assert "IDENTITY" not in combined
 
     def test_go_removal(self):
         exporter = SQLExporter(db_path="/tmp/test_edge4.db")
-        result = exporter._convert_tsql_to_sqlite(
+        results = exporter._convert_tsql_to_sqlite(
             "CREATE TABLE t (id int);\nGO\n"
         )
-        assert "GO" not in result or "go" not in result.lower().split()
+        combined = " ".join(results) if isinstance(results, list) else results
+        assert "\nGO\n" not in combined
 
 
 class TestSQLExporterInit:

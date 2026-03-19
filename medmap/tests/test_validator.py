@@ -564,15 +564,16 @@ class TestGetAuditLogDf:
 class TestValidatorClinicalRangesExtended:
     def test_potassium_outlier(self):
         v = DataValidator()
-        df = make_labs_df({"potassium_mmol_L": [99.0]})
+        df = make_labs_df({"potassium_mmol_L": [99.0, 99.0, 99.0]})
         v.validate_dataframe(df, "test.csv")
         log = v.get_audit_log()
-        outliers = [e for e in log if e.error_type == "CLINICAL_OUTLIER"]
+        outliers = [e for e in log if e.error_type == "CLINICAL_OUTLIER"
+                    and "potassium" in e.column_name]
         assert len(outliers) >= 1
 
     def test_potassium_normal(self):
         v = DataValidator()
-        df = make_labs_df({"potassium_mmol_L": [4.0]})
+        df = make_labs_df({"potassium_mmol_L": [4.0, 4.0, 4.0]})
         v.validate_dataframe(df, "test.csv")
         log = v.get_audit_log()
         outliers = [e for e in log if e.error_type == "CLINICAL_OUTLIER"
@@ -581,15 +582,16 @@ class TestValidatorClinicalRangesExtended:
 
     def test_glucose_outlier(self):
         v = DataValidator()
-        df = make_labs_df({"glucose_mg_dL": [9999.0]})
+        df = make_labs_df({"glucose_mg_dL": [9999.0, 9999.0, 9999.0]})
         v.validate_dataframe(df, "test.csv")
         log = v.get_audit_log()
-        outliers = [e for e in log if e.error_type == "CLINICAL_OUTLIER"]
+        outliers = [e for e in log if e.error_type == "CLINICAL_OUTLIER"
+                    and "glucose" in e.column_name]
         assert len(outliers) >= 1
 
     def test_hemoglobin_normal(self):
         v = DataValidator()
-        df = make_labs_df({"hemoglobin_g_dL": [14.0]})
+        df = make_labs_df({"hemoglobin_g_dL": [14.0, 14.0, 14.0]})
         v.validate_dataframe(df, "test.csv")
         log = v.get_audit_log()
         outliers = [e for e in log if e.error_type == "CLINICAL_OUTLIER"
@@ -600,7 +602,7 @@ class TestValidatorClinicalRangesExtended:
 class TestValidatorMissingValues:
     def test_detects_null_token(self):
         v = DataValidator()
-        df = make_labs_df({"sodium_mmol_L": ["null"]})
+        df = make_labs_df({"sodium_mmol_L": ["null", "null", "null"]})
         v.validate_dataframe(df, "test.csv")
         log = v.get_audit_log()
         missing = [e for e in log if "MISSING" in e.error_type.upper()]
@@ -608,7 +610,7 @@ class TestValidatorMissingValues:
 
     def test_detects_na_token(self):
         v = DataValidator()
-        df = make_labs_df({"sodium_mmol_L": ["N/A"]})
+        df = make_labs_df({"sodium_mmol_L": ["N/A", "N/A", "N/A"]})
         v.validate_dataframe(df, "test.csv")
         log = v.get_audit_log()
         assert len(log) >= 1
@@ -637,16 +639,15 @@ class TestValidatorDuplicateDetection:
 class TestValidatorDateEdgeCases:
     def test_future_date_flagged(self):
         v = DataValidator()
-        df = make_labs_df({"specimen_datetime": ["2099-12-31"]})
+        df = make_labs_df({"specimen_datetime": ["2099-12-31", "2099-12-31", "2099-12-31"]})
         v.validate_dataframe(df, "test.csv")
         log = v.get_audit_log()
         date_errors = [e for e in log if "DATE" in e.error_type.upper()]
-        # Future dates may or may not be flagged depending on impl
         assert isinstance(date_errors, list)
 
     def test_valid_date_no_error(self):
         v = DataValidator()
-        df = make_labs_df({"specimen_datetime": ["2025-06-15"]})
+        df = make_labs_df({"specimen_datetime": ["2025-06-15", "2025-06-16", "2025-06-17"]})
         v.validate_dataframe(df, "test.csv")
         log = v.get_audit_log()
         date_errors = [e for e in log if "DATE" in e.error_type.upper()
