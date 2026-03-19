@@ -13,7 +13,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Body
 
-from api.dependencies import pipeline_state, get_db_path, close_db
+from api.dependencies import pipeline_state, get_db_path
 from contracts import PipelineStatus, PipelineProgress
 
 logger = logging.getLogger(__name__)
@@ -30,7 +30,6 @@ def _run_pipeline_thread(data_folder: str):
         from pipeline.agents.orchestrator import PipelineOrchestrator
 
         db_path = get_db_path()
-        close_db()
 
         orchestrator = PipelineOrchestrator(db_path=db_path)
         for progress in orchestrator.run_pipeline(
@@ -40,6 +39,13 @@ def _run_pipeline_thread(data_folder: str):
 
         if orchestrator.stats:
             pipeline_state.update_stats(orchestrator.stats)
+
+        # Invalidate caches that depend on DB data
+        try:
+            from api.routers.alerts import invalidate_alerts_cache
+            invalidate_alerts_cache()
+        except Exception:
+            pass
 
     except Exception as e:
         logger.error("Pipeline thread failed: %s", e, exc_info=True)

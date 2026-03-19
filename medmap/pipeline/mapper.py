@@ -108,8 +108,13 @@ class DataMapper:
 
     def _extract_case_id_numeric(self, val) -> Optional[int]:
         """Extract numeric part from case_id (e.g., 'CASE-0042' -> 42)."""
-        if pd.isna(val) if isinstance(val, float) else val is None:
+        if val is None:
             return None
+        try:
+            if pd.isna(val):
+                return None
+        except (TypeError, ValueError):
+            pass
         s = str(val).strip()
         # Extract digits from CASE-XXXX format
         m = re.search(r'(\d+)', s)
@@ -132,12 +137,19 @@ class DataMapper:
                             exclude: set = None) -> pd.DataFrame:
         """Convert all columns to string (for nvarchar storage), except excluded."""
         exclude = exclude or set()
+        def _to_str(v):
+            if v is None:
+                return None
+            try:
+                if pd.isna(v):
+                    return None
+            except (TypeError, ValueError):
+                pass
+            return str(v)
         for col in df.columns:
             if col in exclude:
                 continue
-            df[col] = df[col].apply(
-                lambda v: str(v) if v is not None and not (isinstance(v, float) and np.isnan(v)) else None
-            )
+            df[col] = df[col].apply(_to_str)
         return df
 
     # ──────────────────────────────────────────────
@@ -560,6 +572,11 @@ class DataMapper:
             for df in by_type.get(ftype, []):
                 self._extract_case_info_from_epac(df, cases)
 
+        # Extract from device_motion, medication, nursing to avoid FK orphans
+        for ftype in ["device_motion", "device_1hz", "medication", "nursing"]:
+            for df in by_type.get(ftype, []):
+                self._extract_case_info_minimal(df, cases)
+
         if not cases:
             self.mapping_warnings.append("No case data could be assembled")
             return pd.DataFrame()
@@ -645,6 +662,17 @@ class DataMapper:
             self._set_if_missing(info, "primary_icd10_code", self._get_val(df, idx, "primary_icd10_code"))
             self._set_if_missing(info, "admission_date", self._get_val(df, idx, "admission_date"))
             self._set_if_missing(info, "discharge_date", self._get_val(df, idx, "discharge_date"))
+
+    def _extract_case_info_minimal(self, df: pd.DataFrame, cases: dict):
+        """Extract minimal case info (case_id, patient_id) from any source."""
+        for idx in df.index:
+            case_id = self._get_val(df, idx, "case_id")
+            if not case_id:
+                continue
+            if case_id not in cases:
+                cases[case_id] = {}
+            info = cases[case_id]
+            self._set_if_missing(info, "patient_id", self._get_val(df, idx, "patient_id"))
 
     def _extract_case_info_from_epac(self, df: pd.DataFrame, cases: dict):
         """Extract case info from epaAC DataFrame."""

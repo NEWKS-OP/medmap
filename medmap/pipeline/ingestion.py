@@ -16,7 +16,8 @@ import pandas as pd
 
 from contracts import IngestionResult
 from config.settings import (
-    CHUNK_SIZE, DIRTY_DIR, CLEAN_DIR, SPLIT_DIR, IID_SID_ITEM_PATH,
+    CHUNK_SIZE, FILE_SIZE_THRESHOLD_1HZ,
+    DIRTY_DIR, CLEAN_DIR, SPLIT_DIR, IID_SID_ITEM_PATH,
 )
 from config.schema_mapping import (
     detect_file_type, infer_type_from_filename,
@@ -381,16 +382,7 @@ class DataIngester:
                 "Two-line header detected: German names + SAP codes. "
                 "Using German names as column headers."
             )
-            df = pd.read_csv(
-                filepath,
-                encoding=encoding,
-                sep=delimiter,
-                skiprows=1,
-                header=0,
-                on_bad_lines="skip",
-                low_memory=False,
-            )
-            # The first row after skip is SAP codes — was read as data, re-read
+            # Skip line 2 (SAP codes row), keep line 1 as header
             df = pd.read_csv(
                 filepath,
                 encoding=encoding,
@@ -732,7 +724,7 @@ class DataIngester:
 
                 # Check for 1Hz file (large, needs chunked reading)
                 file_size = os.path.getsize(filepath)
-                is_1hz = file_size > 5_000_000  # > 5MB likely 1Hz
+                is_1hz = file_size > FILE_SIZE_THRESHOLD_1HZ  # > 5MB likely 1Hz
 
                 if is_1hz:
                     # Quick column check
@@ -885,7 +877,7 @@ class DataIngester:
             filepath = os.path.join(directory, fname)
 
             # Optionally skip 1Hz files
-            if skip_1hz and os.path.getsize(filepath) > 5_000_000:
+            if skip_1hz and os.path.getsize(filepath) > FILE_SIZE_THRESHOLD_1HZ:
                 logger.info("Skipping large file (1Hz): %s", fname)
                 continue
 

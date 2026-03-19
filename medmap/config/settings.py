@@ -8,6 +8,7 @@ DB_PATH = os.getenv("DB_PATH", "data/db/medmap.db")
 MSSQL_CONNECTION_STRING = os.getenv("MSSQL_CONNECTION_STRING", "")
 
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "5000"))
+FILE_SIZE_THRESHOLD_1HZ = int(os.getenv("FILE_SIZE_THRESHOLD_1HZ", "5000000"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 NLP_MODEL = os.getenv("NLP_MODEL", "en_core_web_sm")
 PID_PREFIX_STRATEGY = os.getenv("PID_PREFIX_STRATEGY", "true").lower() == "true"

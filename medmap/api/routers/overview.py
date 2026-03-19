@@ -51,13 +51,17 @@ async def get_quality_scores() -> list[dict]:
             ).fetchall()
             errors_by_cat = {c["error_type"]: c["cnt"] for c in cats}
 
-            # Score: 100 = perfect, decreases with more errors
-            score = max(0, 100 - min(100, int(total_errors * 0.01)))
+            # Score: 100 = perfect, scales with auto-correct ratio vs quarantine
+            if total_errors == 0:
+                score = 100
+            else:
+                quarantine_ratio = quarantined / total_errors
+                score = max(0, int(100 * (1 - quarantine_ratio)))
 
             scores.append({
                 "source_file": src,
                 "score": score,
-                "rows_imported": total_errors - quarantined,
+                "rows_imported": total_errors,
                 "rows_quarantined": quarantined,
                 "values_auto_corrected": auto_corrected,
                 "errors_by_category": errors_by_cat,

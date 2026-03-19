@@ -94,6 +94,12 @@ def _get_alerts(db: object) -> list[dict]:
     return _alerts_cache
 
 
+def invalidate_alerts_cache():
+    """Reset alerts cache so next access rebuilds from DB."""
+    global _alerts_cache
+    _alerts_cache = None
+
+
 @router.get("")
 async def list_alerts(severity: str = Query(None, description="Filter severity (comma-separated)"), treated: bool = Query(None, description="Filter by treated status"), limit: int = Query(200, ge=1, le=10000, description="Max results")):
     """List clinical alerts with optional severity and treated filters."""
