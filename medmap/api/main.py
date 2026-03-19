@@ -1,6 +1,10 @@
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from api.dependencies import close_db
 from api.routers import (
     pipeline,
     upload,
@@ -13,11 +17,28 @@ from api.routers import (
     corrections,
 )
 
-app = FastAPI(title="MEDMAP API", version="1.0.0", description="Smart Health Data Mapping API")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("MEDMAP API starting up")
+    yield
+    logger.info("MEDMAP API shutting down")
+    close_db()
+
+
+app = FastAPI(
+    title="MEDMAP API",
+    version="1.0.0",
+    description="Smart Health Data Mapping API — 25 endpoints for medical data pipeline",
+    lifespan=lifespan,
+)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "http://localhost:3001"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -40,4 +61,10 @@ async def root():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    try:
+        from api.dependencies import get_db
+        db = get_db()
+        count = db.execute("SELECT COUNT(*) as cnt FROM tbCaseData").fetchone()["cnt"]
+        return {"status": "ok", "db_connected": True, "cases_count": count}
+    except Exception as e:
+        return {"status": "degraded", "db_connected": False, "error": str(e)}

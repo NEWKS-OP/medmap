@@ -11,7 +11,7 @@ from fastapi import APIRouter, UploadFile, File
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(responses={200: {"description": "Upload results"}})
 
 
 @router.post("")

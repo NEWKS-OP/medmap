@@ -18,7 +18,7 @@ from contracts import PipelineStatus, PipelineProgress
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(responses={200: {"description": "Success"}})
 
 
 def _run_pipeline_thread(data_folder: str):

@@ -8,6 +8,8 @@ import logging
 from datetime import datetime
 from fastapi import APIRouter, Query, Body
 
+from typing import Optional
+
 from api.dependencies import get_db
 
 logger = logging.getLogger(__name__)
@@ -15,7 +17,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # In-memory alert store (populated from audit log on first access)
-_alerts_cache: list[dict] | None = None
+_alerts_cache: Optional[list] = None
 
 
 def _build_alerts(db) -> list[dict]:

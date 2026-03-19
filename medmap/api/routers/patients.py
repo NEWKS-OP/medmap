@@ -58,22 +58,26 @@ async def list_patients(ward: str = Query(None), limit: int = Query(50)):
     try:
         if ward:
             rows = db.execute(
-                """SELECT DISTINCT c.coId, c.coCaseIdAlpha, c.coPatientId, c.coGender, c.coAgeYears, c.coIcd,
+                """SELECT c.coId, c.coCaseIdAlpha, c.coPatientId, c.coGender, c.coAgeYears, c.coIcd,
                           i.coWard, i.coAdmission_date, i.coDischarge_date,
                           i.coPrimary_icd10_code, i.coPrimary_icd10_description_en
                    FROM tbCaseData c
-                   LEFT JOIN tbImportIcd10Data i ON i.coCaseId = c.coId
+                   LEFT JOIN (SELECT coCaseId, coWard, coAdmission_date, coDischarge_date,
+                              coPrimary_icd10_code, coPrimary_icd10_description_en
+                              FROM tbImportIcd10Data GROUP BY coCaseId) i ON i.coCaseId = c.coId
                    WHERE i.coWard = ?
                    LIMIT ?""",
                 (ward, limit),
             ).fetchall()
         else:
             rows = db.execute(
-                """SELECT DISTINCT c.coId, c.coCaseIdAlpha, c.coPatientId, c.coGender, c.coAgeYears, c.coIcd,
+                """SELECT c.coId, c.coCaseIdAlpha, c.coPatientId, c.coGender, c.coAgeYears, c.coIcd,
                           i.coWard, i.coAdmission_date, i.coDischarge_date,
                           i.coPrimary_icd10_code, i.coPrimary_icd10_description_en
                    FROM tbCaseData c
-                   LEFT JOIN tbImportIcd10Data i ON i.coCaseId = c.coId
+                   LEFT JOIN (SELECT coCaseId, coWard, coAdmission_date, coDischarge_date,
+                              coPrimary_icd10_code, coPrimary_icd10_description_en
+                              FROM tbImportIcd10Data GROUP BY coCaseId) i ON i.coCaseId = c.coId
                    LIMIT ?""",
                 (limit,),
             ).fetchall()
