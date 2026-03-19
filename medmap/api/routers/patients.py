@@ -139,13 +139,11 @@ async def get_patient_labs(case_id: str) -> list[dict]:
         if not case:
             return []
 
-        labs = db.execute(
-            "SELECT * FROM tbImportLabsData WHERE coCaseId = ?", (case["coId"],)
-        ).fetchall()
-        if not labs:
+        lab_row = db.execute(
+            "SELECT * FROM tbImportLabsData WHERE coCaseId = ? LIMIT 1", (case["coId"],)
+        ).fetchone()
+        if not lab_row:
             return []
-
-        lab_row = labs[0]
         lab_keys = lab_row.keys()
         results = []
         for name, val_col, flag_col, low_col, high_col in LAB_PARAMS:

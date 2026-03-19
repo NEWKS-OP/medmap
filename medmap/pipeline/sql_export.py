@@ -360,10 +360,50 @@ class SQLExporter:
         if not self.conn:
             self.connect()
 
+        # Child tables that require a valid coCaseId (FK to tbCaseData)
+        fk_required_tables = {
+            "tbImportLabsData", "tbImportIcd10Data",
+            "tbImportDeviceMotionData", "tbImportDevice1HzMotionData",
+            "tbImportMedicationInpatientData", "tbImportNursingDailyReportsData",
+        }
+
+        valid_case_ids = None  # Populated after tbCaseData is inserted
+
         results = {}
         for table_name in TABLE_INSERT_ORDER:
             df = mapped_tables.get(table_name)
             if df is not None and not df.empty:
+                # After inserting tbCaseData, collect valid IDs for FK filtering
+                if table_name == "tbCaseData":
+                    count = self._insert_dataframe(table_name, df)
+                    results[table_name] = count
+                    # Build set of valid case IDs (coId, coCaseIdAlpha, coPatientId, coE2I222)
+                    valid_case_ids = set()
+                    for id_col in ("coId", "coE2I222"):
+                        if id_col in df.columns:
+                            valid_case_ids.update(df[id_col].dropna().unique())
+                            valid_case_ids.update(str(v) for v in df[id_col].dropna().unique())
+                    if "coCaseIdAlpha" in df.columns:
+                        valid_case_ids.update(df["coCaseIdAlpha"].dropna().unique())
+                    if "coPatientId" in df.columns:
+                        valid_case_ids.update(df["coPatientId"].dropna().unique())
+                        valid_case_ids.update(str(v) for v in df["coPatientId"].dropna().unique())
+                    continue
+
+                # Drop rows with NULL or orphan coCaseId in child tables
+                if table_name in fk_required_tables and "coCaseId" in df.columns:
+                    if df["coCaseId"].isna().any():
+                        null_count = df["coCaseId"].isna().sum()
+                        logger.info("Dropping %d rows with NULL coCaseId from %s",
+                                    null_count, table_name)
+                        df = df.dropna(subset=["coCaseId"])
+                    if valid_case_ids is not None:
+                        orphan_mask = ~df["coCaseId"].isin(valid_case_ids)
+                        if orphan_mask.any():
+                            orphan_count = orphan_mask.sum()
+                            logger.info("Dropping %d rows with orphan coCaseId from %s",
+                                        orphan_count, table_name)
+                            df = df[~orphan_mask]
                 count = self._insert_dataframe(table_name, df)
                 results[table_name] = count
             else:

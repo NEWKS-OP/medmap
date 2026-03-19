@@ -9,6 +9,8 @@ import re
 from datetime import datetime
 from typing import Optional
 
+from dateutil import parser as dateutil_parser
+
 import numpy as np
 import pandas as pd
 
@@ -290,14 +292,13 @@ class DataValidator:
                             "%d.%m.%Y"
                         )
                     except ValueError:
-                        logger.debug("German month parse failed for: %s", val)
+                        pass
 
         # English textual months via dateutil as last resort
         try:
-            from dateutil import parser as dateutil_parser
             return dateutil_parser.parse(val, dayfirst=True)
         except Exception:
-            logger.debug("dateutil parse failed for: %s", val)
+            pass
 
         return None
 
@@ -362,7 +363,7 @@ class DataValidator:
         try:
             return float(s)
         except ValueError:
-            logger.debug("Direct float conversion failed for: %s", s)
+            pass
         # Strip special characters and retry
         cleaned = SPECIAL_CHARS_PATTERN.sub("", s).strip()
         cleaned = cleaned.replace(",", ".")

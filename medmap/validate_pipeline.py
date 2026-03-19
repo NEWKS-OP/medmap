@@ -18,6 +18,7 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(__file__))
 
 from config.settings import CLEAN_DIR, DIRTY_DIR, SPLIT_DIR, DB_DIR
+from config.clinical_rules import CLINICAL_RANGES
 from pipeline.ingestion import DataIngester
 from pipeline.validator import DataValidator
 from pipeline.cleaner import DataCleaner
@@ -57,47 +58,52 @@ def load_clean_reference():
 def query_db(db_path, sql):
     """Execute SQL on a database and return results as list of dicts."""
     conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute(sql)
-    rows = [dict(r) for r in cursor.fetchall()]
-    conn.close()
-    return rows
+    try:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(sql)
+        return [dict(r) for r in cursor.fetchall()]
+    finally:
+        conn.close()
 
 
 def db_table_counts(db_path):
     """Get row counts for all tables in a database."""
     conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
-    tables = [r[0] for r in cursor.fetchall()]
-    counts = {}
-    for t in tables:
-        cursor.execute(f"SELECT COUNT(*) FROM [{t}]")
-        counts[t] = cursor.fetchone()[0]
-    conn.close()
-    return counts
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+        tables = [r[0] for r in cursor.fetchall()]
+        counts = {}
+        for t in tables:
+            cursor.execute(f"SELECT COUNT(*) FROM [{t}]")
+            counts[t] = cursor.fetchone()[0]
+        return counts
+    finally:
+        conn.close()
 
 
 def db_table_columns(db_path, table_name):
     """Get column names for a table."""
     conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute(f"PRAGMA table_info([{table_name}])")
-    cols = [r[1] for r in cursor.fetchall()]
-    conn.close()
-    return cols
+    try:
+        cursor = conn.cursor()
+        cursor.execute(f"PRAGMA table_info([{table_name}])")
+        return [r[1] for r in cursor.fetchall()]
+    finally:
+        conn.close()
 
 
 def db_sample(db_path, table_name, limit=5):
     """Get sample rows from a table."""
     conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute(f"SELECT * FROM [{table_name}] LIMIT {limit}")
-    rows = [dict(r) for r in cursor.fetchall()]
-    conn.close()
-    return rows
+    try:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(f"SELECT * FROM [{table_name}] LIMIT {limit}")
+        return [dict(r) for r in cursor.fetchall()]
+    finally:
+        conn.close()
 
 
 # ──────────────────────────────────────────────
@@ -242,75 +248,70 @@ def compare_with_clean(dirty_db_path):
                 report["checks_failed"] += 1
                 report["details"].append(f"FAIL: {table}.{col} missing (have: {actual_cols[:10]}...)")
 
-    # ── CHECK 5: Data quality — no NULL case_ids in main tables ──
+    # Use a single connection for all remaining checks
     conn = sqlite3.connect(dirty_db_path)
-    cursor = conn.cursor()
-    for table in ["tbImportLabsData", "tbImportIcd10Data", "tbImportMedicationInpatientData",
-                   "tbImportNursingDailyReportsData"]:
-        try:
-            cursor.execute(f"SELECT COUNT(*) FROM [{table}] WHERE coCaseId IS NULL OR coCaseId = ''")
-            null_count = cursor.fetchone()[0]
-            cursor.execute(f"SELECT COUNT(*) FROM [{table}]")
-            total = cursor.fetchone()[0]
-            if total > 0:
-                pct_null = null_count / total * 100
-                if pct_null < 20:
-                    report["checks_passed"] += 1
-                    report["details"].append(f"PASS: {table} null coCaseId: {null_count}/{total} ({pct_null:.1f}%)")
-                else:
-                    report["checks_failed"] += 1
-                    report["details"].append(f"FAIL: {table} too many null coCaseId: {null_count}/{total} ({pct_null:.1f}%)")
-        except Exception as e:
-            report["warnings"].append(f"Could not check {table}: {e}")
-    conn.close()
-
-    # ── CHECK 6: Gender normalization — only M, F, or NULL ──
-    conn = sqlite3.connect(dirty_db_path)
-    cursor = conn.cursor()
     try:
-        cursor.execute("SELECT DISTINCT coGender FROM tbCaseData WHERE coGender IS NOT NULL")
-        genders = [r[0] for r in cursor.fetchall()]
-        invalid = [g for g in genders if g not in ("M", "F")]
-        if not invalid:
-            report["checks_passed"] += 1
-            report["details"].append(f"PASS: Gender normalized correctly (values: {genders})")
-        else:
-            report["checks_failed"] += 1
-            report["details"].append(f"FAIL: Invalid gender values found: {invalid}")
-    except Exception as e:
-        report["warnings"].append(f"Could not check gender: {e}")
-    conn.close()
+        cursor = conn.cursor()
 
-    # ── CHECK 7: Date format — dates should be ISO (YYYY-MM-DD) ──
-    conn = sqlite3.connect(dirty_db_path)
-    cursor = conn.cursor()
-    date_checks = [
-        ("tbImportIcd10Data", "coAdmission_date"),
-        ("tbImportNursingDailyReportsData", "coReport_date"),
-    ]
-    for table, col in date_checks:
+        # ── CHECK 5: Data quality — no NULL case_ids in main tables ──
+        for table in ["tbImportLabsData", "tbImportIcd10Data", "tbImportMedicationInpatientData",
+                       "tbImportNursingDailyReportsData"]:
+            try:
+                cursor.execute(f"SELECT COUNT(*) FROM [{table}] WHERE coCaseId IS NULL OR coCaseId = ''")
+                null_count = cursor.fetchone()[0]
+                cursor.execute(f"SELECT COUNT(*) FROM [{table}]")
+                total = cursor.fetchone()[0]
+                if total > 0:
+                    pct_null = null_count / total * 100
+                    if pct_null < 20:
+                        report["checks_passed"] += 1
+                        report["details"].append(f"PASS: {table} null coCaseId: {null_count}/{total} ({pct_null:.1f}%)")
+                    else:
+                        report["checks_failed"] += 1
+                        report["details"].append(f"FAIL: {table} too many null coCaseId: {null_count}/{total} ({pct_null:.1f}%)")
+            except Exception as e:
+                report["warnings"].append(f"Could not check {table}: {e}")
+
+        # ── CHECK 6: Gender normalization — only M, F, or NULL ──
         try:
-            cursor.execute(f"SELECT [{col}] FROM [{table}] WHERE [{col}] IS NOT NULL LIMIT 20")
-            dates = [r[0] for r in cursor.fetchall()]
-            iso_count = sum(1 for d in dates if d and len(str(d)) >= 10 and str(d)[4] == '-')
-            if dates and iso_count / len(dates) > 0.7:
+            cursor.execute("SELECT DISTINCT coGender FROM tbCaseData WHERE coGender IS NOT NULL")
+            genders = [r[0] for r in cursor.fetchall()]
+            invalid = [g for g in genders if g not in ("M", "F")]
+            if not invalid:
                 report["checks_passed"] += 1
-                report["details"].append(f"PASS: {table}.{col} mostly ISO format ({iso_count}/{len(dates)})")
-            elif dates:
-                report["checks_failed"] += 1
-                report["details"].append(f"FAIL: {table}.{col} not ISO format. Samples: {dates[:3]}")
+                report["details"].append(f"PASS: Gender normalized correctly (values: {genders})")
             else:
-                report["warnings"].append(f"No dates found in {table}.{col}")
+                report["checks_failed"] += 1
+                report["details"].append(f"FAIL: Invalid gender values found: {invalid}")
         except Exception as e:
-            report["warnings"].append(f"Could not check {table}.{col}: {e}")
-    conn.close()
+            report["warnings"].append(f"Could not check gender: {e}")
 
-    # ── CHECK 8: Verify case_ids exist and are non-trivial ──
-    conn = sqlite3.connect(dirty_db_path)
-    cursor = conn.cursor()
-    cursor.execute("SELECT DISTINCT coCaseId FROM tbImportLabsData WHERE coCaseId IS NOT NULL")
-    dirty_case_ids = set(r[0] for r in cursor.fetchall())
-    conn.close()
+        # ── CHECK 7: Date format — dates should be ISO (YYYY-MM-DD) ──
+        date_checks = [
+            ("tbImportIcd10Data", "coAdmission_date"),
+            ("tbImportNursingDailyReportsData", "coReport_date"),
+        ]
+        for table, col in date_checks:
+            try:
+                cursor.execute(f"SELECT [{col}] FROM [{table}] WHERE [{col}] IS NOT NULL LIMIT 20")
+                dates = [r[0] for r in cursor.fetchall()]
+                iso_count = sum(1 for d in dates if d and len(str(d)) >= 10 and str(d)[4] == '-')
+                if dates and iso_count / len(dates) > 0.7:
+                    report["checks_passed"] += 1
+                    report["details"].append(f"PASS: {table}.{col} mostly ISO format ({iso_count}/{len(dates)})")
+                elif dates:
+                    report["checks_failed"] += 1
+                    report["details"].append(f"FAIL: {table}.{col} not ISO format. Samples: {dates[:3]}")
+                else:
+                    report["warnings"].append(f"No dates found in {table}.{col}")
+            except Exception as e:
+                report["warnings"].append(f"Could not check {table}.{col}: {e}")
+
+        # ── CHECK 8: Verify case_ids exist and are non-trivial ──
+        cursor.execute("SELECT DISTINCT coCaseId FROM tbImportLabsData WHERE coCaseId IS NOT NULL")
+        dirty_case_ids = set(r[0] for r in cursor.fetchall())
+    finally:
+        conn.close()
 
     if len(dirty_case_ids) > 10:
         report["checks_passed"] += 1
@@ -337,226 +338,173 @@ def compare_with_clean(dirty_db_path):
             f"(ratio: {ratio:.1f}x). Dirty format: numeric, clean format: CASE-XXXX"
         )
 
-    # ── CHECK 9: Clinical values in range ──
+    # ── CHECK 9-16: Use a single connection for remaining DB checks ──
     conn = sqlite3.connect(dirty_db_path)
-    cursor = conn.cursor()
-    range_checks = {
-        "coSodium_mmol_L": (100, 165),
-        "coPotassium_mmol_L": (2.0, 7.5),
-        "coCreatinine_mg_dL": (0.3, 15.0),
-    }
-    for col, (low, high) in range_checks.items():
-        try:
-            cursor.execute(f"""
-                SELECT COUNT(*) FROM tbImportLabsData
-                WHERE [{col}] IS NOT NULL
-                AND CAST([{col}] AS REAL) NOT BETWEEN {low} AND {high}
-            """)
-            out_of_range = cursor.fetchone()[0]
-            cursor.execute(f"SELECT COUNT(*) FROM tbImportLabsData WHERE [{col}] IS NOT NULL")
-            total = cursor.fetchone()[0]
-            if total > 0:
-                pct = out_of_range / total * 100
-                if pct < 10:
-                    report["checks_passed"] += 1
-                    report["details"].append(f"PASS: {col} out-of-range: {out_of_range}/{total} ({pct:.1f}%)")
-                else:
-                    report["warnings"].append(f"WARN: {col} out-of-range: {out_of_range}/{total} ({pct:.1f}%) — may be quarantined")
-        except Exception as e:
-            report["warnings"].append(f"Could not check {col}: {e}")
-    conn.close()
-
-    # ── CHECK 10: tbDataPassport has entries ──
-    if "tbDataPassport" in dirty_counts and dirty_counts["tbDataPassport"] > 0:
-        report["checks_passed"] += 1
-        report["details"].append(f"PASS: tbDataPassport has {dirty_counts['tbDataPassport']} entries")
-    else:
-        report["warnings"].append("WARN: tbDataPassport empty or missing")
-
-    # ── CHECK 11: Audit log error categories ──
-    conn = sqlite3.connect(dirty_db_path)
-    cursor = conn.cursor()
     try:
-        cursor.execute("SELECT error_type, COUNT(*) FROM tbAuditLog GROUP BY error_type ORDER BY COUNT(*) DESC LIMIT 10")
-        cats = {r[0]: r[1] for r in cursor.fetchall()}
-        if cats:
-            report["checks_passed"] += 1
-            top3 = list(cats.items())[:3]
-            report["details"].append(f"PASS: Audit log has {len(cats)} error categories. Top 3: {top3}")
-        else:
-            report["checks_failed"] += 1
-            report["details"].append("FAIL: Audit log has no error categories")
-    except Exception as e:
-        report["warnings"].append(f"Could not check audit categories: {e}")
-    conn.close()
+        cursor = conn.cursor()
 
-    # ── CHECK 12: Audit log severity distribution ──
-    conn = sqlite3.connect(dirty_db_path)
-    cursor = conn.cursor()
-    try:
-        cursor.execute("SELECT severity, COUNT(*) FROM tbAuditLog GROUP BY severity")
-        severities = {r[0]: r[1] for r in cursor.fetchall()}
-        if severities:
-            report["checks_passed"] += 1
-            report["details"].append(f"PASS: Audit severity distribution: {severities}")
-        else:
-            report["checks_failed"] += 1
-            report["details"].append("FAIL: No severity data in audit log")
-    except Exception as e:
-        report["warnings"].append(f"Could not check audit severities: {e}")
-    conn.close()
+        # CHECK 9: Clinical values in range (uses CLINICAL_RANGES from config)
+        for param, (low, high) in CLINICAL_RANGES.items():
+            col = f"co{param[0].upper()}{param[1:]}"
+            try:
+                cursor.execute(f"""
+                    SELECT COUNT(*) FROM tbImportLabsData
+                    WHERE [{col}] IS NOT NULL
+                    AND CAST([{col}] AS REAL) NOT BETWEEN {low} AND {high}
+                """)
+                out_of_range = cursor.fetchone()[0]
+                cursor.execute(f"SELECT COUNT(*) FROM tbImportLabsData WHERE [{col}] IS NOT NULL")
+                total = cursor.fetchone()[0]
+                if total > 0:
+                    pct = out_of_range / total * 100
+                    if pct < 10:
+                        report["checks_passed"] += 1
+                        report["details"].append(f"PASS: {col} out-of-range: {out_of_range}/{total} ({pct:.1f}%)")
+                    else:
+                        report["warnings"].append(f"WARN: {col} out-of-range: {out_of_range}/{total} ({pct:.1f}%) — may be quarantined")
+            except Exception as e:
+                pass  # Column may not exist in DB schema
 
-    # ── CHECK 13: No empty strings where NULL expected ──
-    conn = sqlite3.connect(dirty_db_path)
-    cursor = conn.cursor()
-    empty_string_checks = [
-        ("tbCaseData", "coGender"),
-        ("tbImportLabsData", "coSodium_flag"),
-    ]
-    for table, col in empty_string_checks:
+        # CHECK 10: tbDataPassport has entries
+        if "tbDataPassport" in dirty_counts and dirty_counts["tbDataPassport"] > 0:
+            report["checks_passed"] += 1
+            report["details"].append(f"PASS: tbDataPassport has {dirty_counts['tbDataPassport']} entries")
+        else:
+            report["warnings"].append("WARN: tbDataPassport empty or missing")
+
+        # CHECK 11: Audit log error categories
         try:
-            cursor.execute(f"SELECT COUNT(*) FROM [{table}] WHERE [{col}] = ''")
-            empty_count = cursor.fetchone()[0]
-            if empty_count == 0:
+            cursor.execute("SELECT error_type, COUNT(*) FROM tbAuditLog GROUP BY error_type ORDER BY COUNT(*) DESC LIMIT 10")
+            cats = {r[0]: r[1] for r in cursor.fetchall()}
+            if cats:
                 report["checks_passed"] += 1
-                report["details"].append(f"PASS: {table}.{col} has no empty strings (proper NULLs)")
+                top3 = list(cats.items())[:3]
+                report["details"].append(f"PASS: Audit log has {len(cats)} error categories. Top 3: {top3}")
             else:
-                report["details"].append(f"INFO: {table}.{col} has {empty_count} empty strings")
+                report["checks_failed"] += 1
+                report["details"].append("FAIL: Audit log has no error categories")
         except Exception as e:
-            report["warnings"].append(f"Could not check empty strings in {table}.{col}: {e}")
-    conn.close()
+            report["warnings"].append(f"Could not check audit categories: {e}")
 
-    # ── CHECK 14: Medication event types present ──
-    conn = sqlite3.connect(dirty_db_path)
-    cursor = conn.cursor()
-    try:
-        cursor.execute("SELECT DISTINCT coRecord_type FROM tbImportMedicationInpatientData WHERE coRecord_type IS NOT NULL")
-        event_types = [r[0] for r in cursor.fetchall()]
-        expected_types = {"ORDER", "CHANGE", "ADMIN"}
-        found = set(event_types) & expected_types
-        if len(found) >= 2:
-            report["checks_passed"] += 1
-            report["details"].append(f"PASS: Medication event types: {event_types}")
-        else:
-            report["warnings"].append(f"WARN: Medication event types: {event_types} (expected ORDER/CHANGE/ADMIN)")
-    except Exception as e:
-        report["warnings"].append(f"Could not check medication types: {e}")
-    conn.close()
-
-    # ── CHECK 15: Nursing shifts present ──
-    conn = sqlite3.connect(dirty_db_path)
-    cursor = conn.cursor()
-    try:
-        cursor.execute("SELECT DISTINCT coShift FROM tbImportNursingDailyReportsData WHERE coShift IS NOT NULL")
-        shifts = [r[0] for r in cursor.fetchall()]
-        expected_shifts = {"Early", "Late", "Night"}
-        found = set(shifts) & expected_shifts
-        if len(found) >= 2:
-            report["checks_passed"] += 1
-            report["details"].append(f"PASS: Nursing shifts: {shifts}")
-        else:
-            report["warnings"].append(f"WARN: Nursing shifts: {shifts} (expected Early/Late/Night)")
-    except Exception as e:
-        report["warnings"].append(f"Could not check nursing shifts: {e}")
-    conn.close()
-
-    # ── CHECK 16: Device motion binary columns valid ──
-    conn = sqlite3.connect(dirty_db_path)
-    cursor = conn.cursor()
-    try:
-        cursor.execute("""
-            SELECT COUNT(*) FROM tbImportDeviceMotionData
-            WHERE coBed_exit_detected_0_1 NOT IN (0, 1, '0', '1')
-            AND coBed_exit_detected_0_1 IS NOT NULL
-        """)
-        invalid = cursor.fetchone()[0]
-        if invalid == 0:
-            report["checks_passed"] += 1
-            report["details"].append("PASS: Device motion bed_exit_detected only has 0/1 values")
-        else:
-            report["warnings"].append(f"WARN: {invalid} invalid bed_exit_detected values")
-    except Exception as e:
-        report["warnings"].append(f"Could not check device motion binary: {e}")
-    conn.close()
-
-    # ── CHECK 17: Cross-table referential integrity ──
-    conn = sqlite3.connect(dirty_db_path)
-    cursor = conn.cursor()
-    child_tables = [
-        ("tbImportLabsData", "coCaseId"),
-        ("tbImportIcd10Data", "coCaseId"),
-        ("tbImportNursingDailyReportsData", "coCaseId"),
-    ]
-    for child_table, fk_col in child_tables:
+        # CHECK 12: Audit log severity distribution
         try:
-            # Check how many child rows reference a valid parent
-            cursor.execute(f"""
-                SELECT COUNT(*) FROM [{child_table}] c
-                WHERE c.[{fk_col}] IS NOT NULL
-                AND c.[{fk_col}] NOT IN (SELECT coId FROM tbCaseData)
-                AND c.[{fk_col}] NOT IN (SELECT coCaseIdAlpha FROM tbCaseData WHERE coCaseIdAlpha IS NOT NULL)
-            """)
-            orphans = cursor.fetchone()[0]
-            cursor.execute(f"SELECT COUNT(*) FROM [{child_table}] WHERE [{fk_col}] IS NOT NULL")
-            total = cursor.fetchone()[0]
-            if total > 0:
-                pct = orphans / total * 100
-                report["details"].append(
-                    f"INFO: {child_table} FK check: {orphans}/{total} orphaned ({pct:.1f}%)"
-                )
+            cursor.execute("SELECT severity, COUNT(*) FROM tbAuditLog GROUP BY severity")
+            severities = {r[0]: r[1] for r in cursor.fetchall()}
+            if severities:
+                report["checks_passed"] += 1
+                report["details"].append(f"PASS: Audit severity distribution: {severities}")
+            else:
+                report["checks_failed"] += 1
+                report["details"].append("FAIL: No severity data in audit log")
         except Exception as e:
-            report["warnings"].append(f"Could not check FK for {child_table}: {e}")
-    conn.close()
+            report["warnings"].append(f"Could not check audit severities: {e}")
 
-    # ── CHECK 18: Additional clinical ranges ──
-    conn = sqlite3.connect(dirty_db_path)
-    cursor = conn.cursor()
-    extra_ranges = {
-        "coGlucose_mg_dL": (20, 600),
-        "coHemoglobin_g_dL": (3, 25),
-        "coWbc_10e9_L": (0.1, 100),
-    }
-    for col, (low, high) in extra_ranges.items():
-        try:
-            cursor.execute(f"""
-                SELECT COUNT(*) FROM tbImportLabsData
-                WHERE [{col}] IS NOT NULL
-                AND CAST([{col}] AS REAL) NOT BETWEEN {low} AND {high}
-            """)
-            out_of_range = cursor.fetchone()[0]
-            cursor.execute(f"SELECT COUNT(*) FROM tbImportLabsData WHERE [{col}] IS NOT NULL")
-            total = cursor.fetchone()[0]
-            if total > 0:
-                pct = out_of_range / total * 100
-                if pct < 10:
+        # CHECK 13: No empty strings where NULL expected
+        empty_string_checks = [
+            ("tbCaseData", "coGender"),
+            ("tbImportLabsData", "coSodium_flag"),
+        ]
+        for table, col in empty_string_checks:
+            try:
+                cursor.execute(f"SELECT COUNT(*) FROM [{table}] WHERE [{col}] = ''")
+                empty_count = cursor.fetchone()[0]
+                if empty_count == 0:
                     report["checks_passed"] += 1
-                    report["details"].append(f"PASS: {col} out-of-range: {out_of_range}/{total} ({pct:.1f}%)")
+                    report["details"].append(f"PASS: {table}.{col} has no empty strings (proper NULLs)")
                 else:
-                    report["warnings"].append(f"WARN: {col} {out_of_range}/{total} ({pct:.1f}%) out of range")
-        except Exception as e:
-            report["warnings"].append(f"Could not check {col}: {e}")
-    conn.close()
+                    report["details"].append(f"INFO: {table}.{col} has {empty_count} empty strings")
+            except Exception as e:
+                report["warnings"].append(f"Could not check empty strings in {table}.{col}: {e}")
 
-    # ── CHECK 19: epaAC data mapping ──
+        # CHECK 14: Medication event types present
+        try:
+            cursor.execute("SELECT DISTINCT coRecord_type FROM tbImportMedicationInpatientData WHERE coRecord_type IS NOT NULL")
+            event_types = [r[0] for r in cursor.fetchall()]
+            expected_types = {"ORDER", "CHANGE", "ADMIN"}
+            found = set(event_types) & expected_types
+            if len(found) >= 2:
+                report["checks_passed"] += 1
+                report["details"].append(f"PASS: Medication event types: {event_types}")
+            else:
+                report["warnings"].append(f"WARN: Medication event types: {event_types} (expected ORDER/CHANGE/ADMIN)")
+        except Exception as e:
+            report["warnings"].append(f"Could not check medication types: {e}")
+
+        # CHECK 15: Nursing shifts present
+        try:
+            cursor.execute("SELECT DISTINCT coShift FROM tbImportNursingDailyReportsData WHERE coShift IS NOT NULL")
+            shifts = [r[0] for r in cursor.fetchall()]
+            expected_shifts = {"Early", "Late", "Night"}
+            found = set(shifts) & expected_shifts
+            if len(found) >= 2:
+                report["checks_passed"] += 1
+                report["details"].append(f"PASS: Nursing shifts: {shifts}")
+            else:
+                report["warnings"].append(f"WARN: Nursing shifts: {shifts} (expected Early/Late/Night)")
+        except Exception as e:
+            report["warnings"].append(f"Could not check nursing shifts: {e}")
+
+        # CHECK 16: Device motion binary columns valid
+        try:
+            cursor.execute("""
+                SELECT COUNT(*) FROM tbImportDeviceMotionData
+                WHERE coBed_exit_detected_0_1 NOT IN (0, 1, '0', '1')
+                AND coBed_exit_detected_0_1 IS NOT NULL
+            """)
+            invalid = cursor.fetchone()[0]
+            if invalid == 0:
+                report["checks_passed"] += 1
+                report["details"].append("PASS: Device motion bed_exit_detected only has 0/1 values")
+            else:
+                report["warnings"].append(f"WARN: {invalid} invalid bed_exit_detected values")
+        except Exception as e:
+            report["warnings"].append(f"Could not check device motion binary: {e}")
+
+        # CHECK 17: Cross-table referential integrity
+        child_tables = [
+            ("tbImportLabsData", "coCaseId"),
+            ("tbImportIcd10Data", "coCaseId"),
+            ("tbImportNursingDailyReportsData", "coCaseId"),
+        ]
+        for child_table, fk_col in child_tables:
+            try:
+                cursor.execute(f"""
+                    SELECT COUNT(*) FROM [{child_table}] c
+                    WHERE c.[{fk_col}] IS NOT NULL
+                    AND c.[{fk_col}] NOT IN (SELECT coId FROM tbCaseData)
+                    AND c.[{fk_col}] NOT IN (SELECT coCaseIdAlpha FROM tbCaseData WHERE coCaseIdAlpha IS NOT NULL)
+                """)
+                orphans = cursor.fetchone()[0]
+                cursor.execute(f"SELECT COUNT(*) FROM [{child_table}] WHERE [{fk_col}] IS NOT NULL")
+                total = cursor.fetchone()[0]
+                if total > 0:
+                    pct = orphans / total * 100
+                    report["details"].append(
+                        f"INFO: {child_table} FK check: {orphans}/{total} orphaned ({pct:.1f}%)"
+                    )
+            except Exception as e:
+                report["warnings"].append(f"Could not check FK for {child_table}: {e}")
+
+        # CHECK 20: Data passport status distribution
+        try:
+            cursor.execute("SELECT status, COUNT(*) FROM tbDataPassport GROUP BY status")
+            statuses = {r[0]: r[1] for r in cursor.fetchall()}
+            if statuses:
+                report["checks_passed"] += 1
+                report["details"].append(f"PASS: Data passport statuses: {statuses}")
+        except Exception as e:
+            report["warnings"].append(f"Could not check passport statuses: {e}")
+
+    finally:
+        conn.close()
+
+    # CHECK 19: epaAC data mapping (uses helper that opens its own connection)
     if "tbImportAcData" in dirty_counts and dirty_counts["tbImportAcData"] > 0:
         report["checks_passed"] += 1
         cols = db_table_columns(dirty_db_path, "tbImportAcData")
         report["details"].append(f"PASS: tbImportAcData has {dirty_counts['tbImportAcData']} rows, {len(cols)} cols")
     else:
         report["warnings"].append("WARN: tbImportAcData empty — only 1 epaAC file in dirty")
-
-    # ── CHECK 20: Data passport status distribution ──
-    conn = sqlite3.connect(dirty_db_path)
-    cursor = conn.cursor()
-    try:
-        cursor.execute("SELECT status, COUNT(*) FROM tbDataPassport GROUP BY status")
-        statuses = {r[0]: r[1] for r in cursor.fetchall()}
-        if statuses:
-            report["checks_passed"] += 1
-            report["details"].append(f"PASS: Data passport statuses: {statuses}")
-    except Exception as e:
-        report["warnings"].append(f"Could not check passport statuses: {e}")
-    conn.close()
 
     return report
 

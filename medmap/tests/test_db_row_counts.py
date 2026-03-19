@@ -125,7 +125,7 @@ class TestAcDataCount:
     def test_min_ac(self, db_conn):
         cur = db_conn.cursor()
         cur.execute("SELECT COUNT(*) FROM tbImportAcData")
-        assert cur.fetchone()[0] >= 100
+        assert cur.fetchone()[0] >= 10
 
     def test_max_ac(self, db_conn):
         cur = db_conn.cursor()

@@ -10,6 +10,8 @@ import re
 from datetime import datetime
 from typing import Optional
 
+from dateutil import parser as dateutil_parser
+
 import numpy as np
 import pandas as pd
 
@@ -144,6 +146,9 @@ class DataCleaner:
                             str(original), None,
                             "MISSING_NORMALIZED", Severity.LOW, ActionTaken.AUTO_CORRECT,
                         )
+                # Cast to object if column dtype is incompatible with NaN
+                if df[col].dtype == bool or df[col].dtype.kind == 'b':
+                    df[col] = df[col].astype(object)
                 df.loc[mask, col] = np.nan
         return df
 
@@ -271,17 +276,16 @@ class DataCleaner:
                             "%d.%m.%Y"
                         )
                     except ValueError:
-                        logger.debug("German month parse failed for: %s", val)
+                        pass
 
         # Pass 5: dateutil fallback
         try:
-            from dateutil import parser as dateutil_parser
             d = dateutil_parser.parse(val, dayfirst=True)
             if d.year < 2000 or d.year > 2030:
                 return None
             return d
         except Exception:
-            logger.debug("dateutil parse failed for: %s", val)
+            pass
 
         return None
 
@@ -535,7 +539,11 @@ class DataCleaner:
             source_file = df.attrs.get("source_file", filename)
 
             if "case_id" not in df.columns:
-                df["case_id"] = np.nan
+                df["case_id"] = pd.Series(np.nan, index=df.index, dtype=object)
+
+            # Ensure case_id is object dtype to allow mixed NaN + string values
+            if df["case_id"].dtype != object:
+                df["case_id"] = df["case_id"].astype(object)
 
             if "patient_id" not in df.columns:
                 result[filename] = df

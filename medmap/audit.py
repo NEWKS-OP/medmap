@@ -436,9 +436,15 @@ def audit_database(result):
                 result.ok(f"{table}: {count} rows")
 
         # Check FK integrity: coCaseId in child tables references tbCaseData
+        # Child tables store numeric coCaseId (FK to coId) while tbCaseData
+        # has both coId (numeric) and coCaseIdAlpha (string)
         if "tbCaseData" in tables:
             cursor.execute("SELECT DISTINCT coCaseIdAlpha FROM tbCaseData WHERE coCaseIdAlpha IS NOT NULL")
-            valid_case_ids = {row["coCaseIdAlpha"] for row in cursor.fetchall()}
+            valid_alpha_ids = {row["coCaseIdAlpha"] for row in cursor.fetchall()}
+            cursor.execute("SELECT DISTINCT coId FROM tbCaseData WHERE coId IS NOT NULL")
+            valid_numeric_ids = {row["coId"] for row in cursor.fetchall()}
+            # Also add string versions of numeric IDs for mixed comparisons
+            valid_case_ids = valid_alpha_ids | valid_numeric_ids | {str(v) for v in valid_numeric_ids}
 
             fk_tables = [
                 "tbImportLabsData", "tbImportIcd10Data",
