@@ -118,9 +118,9 @@ async def get_agent_stats():
 
 @router.get("/mappings")
 async def get_mappings(
-    badge: str = Query(None),
-    source: str = Query(None),
-    status: str = Query(None),
+    badge: str = Query(None, description="Filter by confidence badge"),
+    source: str = Query(None, description="Filter by source file"),
+    status: str = Query(None, description="Filter by mapping status"),
 ):
     """Get column mappings with optional filters."""
     db = get_db()

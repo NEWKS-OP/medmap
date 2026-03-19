@@ -16,7 +16,7 @@ router = APIRouter(responses={200: {"description": "Overview data"}})
 
 
 @router.get("/quality-scores")
-async def get_quality_scores():
+async def get_quality_scores() -> list[dict]:
     """Get quality scores per source file, computed from audit log."""
     db = get_db()
     try:
@@ -66,7 +66,7 @@ async def get_quality_scores():
 
 
 @router.get("/ward-scores")
-async def get_ward_scores():
+async def get_ward_scores() -> list[dict]:
     """Get ward quality scores."""
     db = get_db()
     try:
@@ -125,7 +125,7 @@ async def get_ward_scores():
 
 
 @router.post("/generate-report")
-async def generate_report():
+async def generate_report() -> dict:
     """Generate a quality report summary."""
     db = get_db()
     try:

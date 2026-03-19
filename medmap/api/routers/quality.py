@@ -17,10 +17,10 @@ router = APIRouter(responses={200: {"description": "Quality data"}})
 
 @router.get("/audit-log")
 async def get_audit_log(
-    source: str = Query(None),
-    severity: str = Query(None),
-    limit: int = Query(100),
-    offset: int = Query(0),
+    source: str = Query(None, description="Filter by source file"),
+    severity: str = Query(None, description="Filter by severity (comma-separated)"),
+    limit: int = Query(100, ge=1, le=1000, description="Max results"),
+    offset: int = Query(0, ge=0, description="Results offset"),
 ):
     """Get audit log entries with optional filters."""
     db = get_db()
@@ -54,9 +54,9 @@ async def get_audit_log(
 
 @router.get("/passports")
 async def get_passports(
-    status: str = Query(None),
-    problem_type: str = Query(None),
-    limit: int = Query(200),
+    status: str = Query(None, description="Filter by passport status"),
+    problem_type: str = Query(None, description="Filter by problem type"),
+    limit: int = Query(200, ge=1, le=1000, description="Max results"),
 ):
     """Get data passports with optional filters."""
     db = get_db()

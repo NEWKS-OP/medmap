@@ -52,7 +52,7 @@ def _build_patient_summary(db, case) -> dict:
 
 
 @router.get("")
-async def list_patients(ward: str = Query(None), limit: int = Query(50)):
+async def list_patients(ward: str = Query(None, description="Filter by ward name"), limit: int = Query(50, ge=1, le=500, description="Max results")):
     """List patients with optional ward filter."""
     db = get_db()
     try:

@@ -80,7 +80,7 @@ def _get_alerts(db) -> list[dict]:
 
 
 @router.get("")
-async def list_alerts(severity: str = Query(None), treated: bool = Query(None)):
+async def list_alerts(severity: str = Query(None, description="Filter severity (comma-separated)"), treated: bool = Query(None, description="Filter by treated status")):
     """List clinical alerts with optional filters."""
     db = get_db()
     try:
