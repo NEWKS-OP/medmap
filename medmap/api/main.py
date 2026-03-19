@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="MEDMAP API",
-    version="1.0.0",
+    version="1.0.1",
     description="Smart Health Data Mapping API — 25 endpoints for medical data pipeline, 9 routers",
     lifespan=lifespan,
 )

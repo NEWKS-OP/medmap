@@ -16,7 +16,10 @@ router = APIRouter(responses={200: {"description": "Agent data"}})
 
 
 def _compute_agent_stats(db: object) -> dict:
-    """Compute agent statistics from the database."""
+    """Compute agent statistics from the audit log.
+
+    Counts auto-corrected, flagged, and quarantined columns.
+    """
     try:
         total_cols = db.execute(
             "SELECT COUNT(DISTINCT column_name) as cnt FROM tbAuditLog WHERE column_name IS NOT NULL"
@@ -54,7 +57,10 @@ def _compute_agent_stats(db: object) -> dict:
 
 
 def _get_column_mappings(db: object, badge: str = None, source: str = None, status: str = None, limit: int = 100) -> list[dict]:
-    """Get column mappings from audit log."""
+    """Get column mappings derived from audit log entries.
+
+    Maps action_taken to confidence/badge/status values.
+    """
     try:
         conditions = ["action_taken IN ('AUTO_CORRECT', 'QUARANTINE', 'FLAGGED')"]
         params = []

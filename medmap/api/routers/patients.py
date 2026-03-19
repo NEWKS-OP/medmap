@@ -34,7 +34,10 @@ def _find_case(db: object, case_id: str):
 
 
 def _build_patient_summary(db: object, case: object) -> dict:
-    """Build a patient summary dict from a case row."""
+    """Build a patient summary dict from a case row.
+
+    Joins ICD-10 data for ward and diagnosis information.
+    """
     internal_id = case["coId"]
     icd = db.execute(
         "SELECT * FROM tbImportIcd10Data WHERE coCaseId = ? LIMIT 1",
@@ -104,7 +107,6 @@ async def list_patients(ward: str = Query(None, description="Filter by ward name
         ]
     except Exception as e:
         logger.error("list_patients error: %s", e)
-        logger.info("Listing patients: %d results", len(rows))
         return []
 
 
@@ -149,18 +151,15 @@ async def get_patient_labs(case_id: str) -> list[dict]:
     try:
         case = _find_case(db, case_id)
         if not case:
-            logger.info("Listing patients: %d results", len(rows))
-        return []
+            return []
 
         labs = db.execute(
             "SELECT * FROM tbImportLabsData WHERE coCaseId = ?", (case["coId"],)
         ).fetchall()
         if not labs:
-            logger.info("Listing patients: %d results", len(rows))
-        return []
+            return []
 
         lab_row = labs[0]
-        logger.info("Listing patients: %d results", len(rows))
         return [
             {
                 "parameter_name": name,
@@ -175,7 +174,6 @@ async def get_patient_labs(case_id: str) -> list[dict]:
         ]
     except Exception as e:
         logger.error("get_patient_labs error: %s", e)
-        logger.info("Listing patients: %d results", len(rows))
         return []
 
 
@@ -186,8 +184,7 @@ async def get_patient_timeline(case_id: str) -> list[dict]:
     try:
         case = _find_case(db, case_id)
         if not case:
-            logger.info("Listing patients: %d results", len(rows))
-        return []
+            return []
 
         cid = case["coId"]
         events: list[dict] = []
@@ -240,7 +237,6 @@ async def get_patient_timeline(case_id: str) -> list[dict]:
         return events
     except Exception as e:
         logger.error("get_patient_timeline error: %s", e)
-        logger.info("Listing patients: %d results", len(rows))
         return []
 
 
@@ -251,8 +247,7 @@ async def get_patient_medications(case_id: str) -> list[dict]:
     try:
         case = _find_case(db, case_id)
         if not case:
-            logger.info("Listing patients: %d results", len(rows))
-        return []
+            return []
 
         meds = db.execute(
             """SELECT coRecord_type, coMedication_code_atc, coMedication_name,
@@ -263,7 +258,6 @@ async def get_patient_medications(case_id: str) -> list[dict]:
             (case["coId"],),
         ).fetchall()
 
-        logger.info("Listing patients: %d results", len(rows))
         return [
             {
                 "event_type": "MEDICATION",
@@ -285,7 +279,6 @@ async def get_patient_medications(case_id: str) -> list[dict]:
         ]
     except Exception as e:
         logger.error("get_patient_medications error: %s", e)
-        logger.info("Listing patients: %d results", len(rows))
         return []
 
 
@@ -296,15 +289,13 @@ async def get_patient_nursing(case_id: str) -> list[dict]:
     try:
         case = _find_case(db, case_id)
         if not case:
-            logger.info("Listing patients: %d results", len(rows))
-        return []
+            return []
 
         rows = db.execute(
             "SELECT coReport_date, coShift, coNursing_note_free_text FROM tbImportNursingDailyReportsData WHERE coCaseId = ?",
             (case["coId"],),
         ).fetchall()
 
-        logger.info("Listing patients: %d results", len(rows))
         return [
             {
                 "case_id": case_id,
@@ -320,7 +311,6 @@ async def get_patient_nursing(case_id: str) -> list[dict]:
         ]
     except Exception as e:
         logger.error("get_patient_nursing error: %s", e)
-        logger.info("Listing patients: %d results", len(rows))
         return []
 
 
@@ -424,5 +414,4 @@ async def get_patient_passports(case_id: str) -> list[dict]:
         return rows_to_dicts(rows)
     except Exception as e:
         logger.error("get_patient_passports error: %s", e)
-        logger.info("Listing patients: %d results", len(rows))
         return []

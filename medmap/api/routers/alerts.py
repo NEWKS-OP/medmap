@@ -17,7 +17,19 @@ logger = logging.getLogger(__name__)
 router = APIRouter(responses={200: {"description": "Alerts data"}})
 
 # In-memory alert store (populated from audit log on first access, cached)
-_alerts_cache: list[dict] | None = None
+_alerts_cache: Optional[list[dict]] = None
+
+
+def _build_sbar(cid: str, entries: list, sources: list, error_types: set) -> dict:
+    """Build a simple SBAR template for critical alerts."""
+    src_str = ", ".join(sources[:3])
+    type_str = ", ".join(error_types)
+    return {
+        "S": f"Patient {cid} has {len(entries)} critical data issues",
+        "B": f"Sources involved: {src_str}",
+        "A": f"Issue types: {type_str}",
+        "R": "Review flagged values and validate corrections",
+    }
 
 
 def _build_alerts(db: object) -> list[dict]:
@@ -66,7 +78,7 @@ def _build_alerts(db: object) -> list[dict]:
             "sources_involved": sources,
             "triggered_values": triggered,
             "timestamp_generated": datetime.now().isoformat(),
-            "sbar": {"S": f"Patient {cid} has {len(entries)} critical data issues", "B": f"Sources involved: {\", \".join(sources[:3])}", "A": f"Issue types: {\", \".join(error_types)}", "R": "Review flagged values and validate corrections"} if len(entries) > 2 else None,
+            "sbar": _build_sbar(cid, entries, sources, error_types) if len(entries) > 2 else None,
             "is_treated": False,
             "treated_by": None,
             "treated_at": None,

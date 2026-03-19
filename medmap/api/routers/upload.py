@@ -35,7 +35,7 @@ async def upload_files(files: list[UploadFile] = File(..., description="Files to
 
             try:
                 logger.info("Processing uploaded file: %s", upload.filename)
-                df, result = ingester.load(tmp_path, original_filename=upload.filename)
+                df, result = ingester.load(tmp_path)
                 results.append({
                     "source_file": upload.filename,
                     "rows_total": result.rows_total,
