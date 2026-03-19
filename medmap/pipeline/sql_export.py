@@ -13,7 +13,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from config.settings import DB_PATH, DB_DIR, SQL_SCHEMA_PATH
+from config.settings import DB_PATH, DB_DIR, SQL_SCHEMA_PATH, DB_TYPE, MSSQL_CONNECTION_STRING
 from contracts import AuditLogEntry, Severity, ActionTaken
 
 logger = logging.getLogger(__name__)
@@ -286,35 +286,37 @@ class SQLExporter:
             logger.warning("No matching columns for %s", table_name)
             return 0
 
-        # Prepare insert statement
+        # Prepare insert statement (use OR IGNORE when inserting explicit PKs)
         placeholders = ", ".join(["?"] * len(matched_cols))
         col_names = ", ".join(matched_cols)
-        sql = f"INSERT INTO {table_name} ({col_names}) VALUES ({placeholders})"
+        ignore = " OR IGNORE" if pk_col in df.columns else ""
+        sql = f"INSERT{ignore} INTO {table_name} ({col_names}) VALUES ({placeholders})"
 
-        # Convert DataFrame to list of tuples
+        # Convert DataFrame to list of tuples (vectorized for performance)
+        # Pre-process columns: replace NaN with None, convert numpy types
+        insert_df = df[matched_cols].copy()
+        for col in insert_df.columns:
+            insert_df[col] = insert_df[col].where(insert_df[col].notna(), None)
+
         total_inserted = 0
-        for start in range(0, len(df), chunk_size):
-            chunk = df.iloc[start:start + chunk_size]
-            rows = []
-            for _, row in chunk.iterrows():
-                values = []
-                for col in matched_cols:
-                    val = row.get(col)
-                    if val is None or (isinstance(val, float) and np.isnan(val)):
-                        values.append(None)
-                    elif isinstance(val, (np.integer,)):
-                        values.append(int(val))
-                    elif isinstance(val, (np.floating,)):
-                        values.append(float(val))
-                    elif isinstance(val, (int, float)):
-                        values.append(val)
-                    else:
-                        values.append(str(val))
-                rows.append(tuple(values))
+        for start in range(0, len(insert_df), chunk_size):
+            chunk = insert_df.iloc[start:start + chunk_size]
+            rows = [
+                tuple(
+                    None if v is None or (isinstance(v, float) and np.isnan(v))
+                    else int(v) if isinstance(v, (np.integer,))
+                    else float(v) if isinstance(v, (np.floating,))
+                    else v if isinstance(v, (int, float))
+                    else str(v)
+                    for v in record
+                )
+                for record in chunk.itertuples(index=False, name=None)
+            ]
 
             try:
-                self.conn.executemany(sql, rows)
-                total_inserted += len(rows)
+                cursor = self.conn.executemany(sql, rows)
+                # Use rowcount for accurate count (handles OR IGNORE)
+                total_inserted += cursor.rowcount if cursor.rowcount >= 0 else len(rows)
             except sqlite3.Error as e:
                 logger.error("Insert error for %s (chunk %d): %s",
                              table_name, start // chunk_size, e)
@@ -541,3 +543,134 @@ class SQLExporter:
         if not self.conn:
             self.connect()
         return self.conn
+
+
+class MSSQLExporter:
+    """Exports mapped DataFrames to SQL Server via SQLAlchemy + pyodbc."""
+
+    def __init__(self, connection_string: Optional[str] = None):
+        self.connection_string = connection_string or MSSQL_CONNECTION_STRING
+        self.engine = None
+
+    def connect(self):
+        """Create SQLAlchemy engine for SQL Server."""
+        try:
+            from sqlalchemy import create_engine
+            self.engine = create_engine(self.connection_string)
+            logger.info("Connected to SQL Server")
+            return self.engine
+        except ImportError:
+            logger.error("sqlalchemy/pyodbc not installed for SQL Server support")
+            raise
+        except Exception as e:
+            logger.error("SQL Server connection failed: %s", e)
+            raise
+
+    def close(self):
+        """Dispose of the engine."""
+        if self.engine:
+            self.engine.dispose()
+            self.engine = None
+
+    def create_schema(self):
+        """Execute the T-SQL schema file directly on SQL Server."""
+        if not self.engine:
+            self.connect()
+
+        if os.path.exists(SQL_SCHEMA_PATH):
+            with open(SQL_SCHEMA_PATH, "r", encoding="utf-8-sig") as f:
+                tsql = f.read()
+
+            # Split on 'go' statements
+            batches = re.split(r'(?mi)^\s*go\s*$', tsql)
+            with self.engine.connect() as conn:
+                for batch in batches:
+                    batch = batch.strip()
+                    if batch:
+                        try:
+                            conn.execute(batch)
+                        except Exception as e:
+                            logger.warning("Schema batch error: %s", e)
+                conn.commit()
+            logger.info("SQL Server schema created")
+
+    def insert_all(self, mapped_tables: dict[str, pd.DataFrame]) -> dict[str, int]:
+        """Insert all mapped tables using pandas to_sql."""
+        if not self.engine:
+            self.connect()
+
+        results = {}
+        for table_name in TABLE_INSERT_ORDER:
+            df = mapped_tables.get(table_name)
+            if df is not None and not df.empty:
+                try:
+                    # Remove coId if present (let SQL Server handle IDENTITY)
+                    insert_df = df.drop(columns=["coId"], errors="ignore")
+                    insert_df.to_sql(
+                        table_name, self.engine,
+                        if_exists="append", index=False,
+                        chunksize=1000, method="multi",
+                    )
+                    results[table_name] = len(insert_df)
+                except Exception as e:
+                    logger.error("MSSQL insert error for %s: %s", table_name, e)
+                    results[table_name] = 0
+            else:
+                results[table_name] = 0
+
+        return results
+
+    def export_all(self, mapped_tables: dict[str, pd.DataFrame],
+                    audit_log: list[AuditLogEntry] = None) -> dict:
+        """Full export to SQL Server."""
+        if not self.engine:
+            self.connect()
+
+        self.create_schema()
+        insert_results = self.insert_all(mapped_tables)
+
+        # Insert audit log as DataFrame
+        audit_count = 0
+        if audit_log:
+            audit_df = pd.DataFrame([
+                {
+                    "source_file": e.source_file,
+                    "case_id": e.case_id,
+                    "table_name": e.table_name,
+                    "column_name": e.column_name,
+                    "original_value": e.original_value,
+                    "cleaned_value": e.cleaned_value,
+                    "error_type": e.error_type,
+                    "severity": e.severity.value if isinstance(e.severity, Severity) else str(e.severity),
+                    "action_taken": e.action_taken.value if isinstance(e.action_taken, ActionTaken) else str(e.action_taken),
+                    "corrected_by": e.corrected_by,
+                    "correction_timestamp": e.correction_timestamp,
+                    "row_number": e.row_number,
+                }
+                for e in audit_log
+            ])
+            try:
+                audit_df.to_sql(
+                    "tbAuditLog", self.engine,
+                    if_exists="append", index=False,
+                    chunksize=5000, method="multi",
+                )
+                audit_count = len(audit_df)
+            except Exception as e:
+                logger.error("MSSQL audit log insert error: %s", e)
+
+        return {
+            "connection": self.connection_string,
+            "tables": insert_results,
+            "audit_log_entries": audit_count,
+            "total_rows": sum(insert_results.values()),
+        }
+
+
+def create_exporter(db_type: Optional[str] = None,
+                     **kwargs) -> "SQLExporter | MSSQLExporter":
+    """Factory: create the appropriate exporter based on config."""
+    db_type = db_type or DB_TYPE
+    if db_type == "mssql" and MSSQL_CONNECTION_STRING:
+        return MSSQLExporter(**kwargs)
+    return SQLExporter(**kwargs)

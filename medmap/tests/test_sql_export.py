@@ -486,6 +486,95 @@ class TestTsqlConversionEdgeCases:
         assert "\nGO\n" not in combined
 
 
+class TestCaseInsensitiveColumnMatching:
+    def test_matches_lowercase_schema_cols(self, exporter):
+        """Schema has cosodium_ref_low, mapper produces coSodium_ref_low."""
+        exporter.connect()
+        exporter.conn.execute(
+            "CREATE TABLE test_t (coId INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "cosodium_ref_low TEXT, cosodium_ref_high TEXT)"
+        )
+        exporter.conn.commit()
+        df = pd.DataFrame({
+            "coSodium_ref_low": ["100"],
+            "coSodium_ref_high": ["150"],
+        })
+        count = exporter._insert_dataframe("test_t", df)
+        assert count == 1
+        # Verify data was actually inserted
+        cursor = exporter.conn.execute("SELECT cosodium_ref_low, cosodium_ref_high FROM test_t")
+        row = cursor.fetchone()
+        assert row[0] == "100"
+        assert row[1] == "150"
+        exporter.close()
+
+    def test_mixed_case_matching(self, exporter):
+        """Some cols match exactly, others need case-insensitive."""
+        exporter.connect()
+        exporter.conn.execute(
+            "CREATE TABLE test_t (coId INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "coExact TEXT, colower TEXT)"
+        )
+        exporter.conn.commit()
+        df = pd.DataFrame({"coExact": ["a"], "coLower": ["b"]})
+        count = exporter._insert_dataframe("test_t", df)
+        assert count == 1
+        exporter.close()
+
+
+class TestInsertOrIgnore:
+    def test_ignores_duplicate_pks(self, exporter):
+        """When DataFrame provides coId, duplicates should be silently ignored."""
+        exporter.connect()
+        exporter.conn.execute(
+            "CREATE TABLE test_t (coId INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)"
+        )
+        exporter.conn.commit()
+        df = pd.DataFrame({"coId": [1, 1, 2], "name": ["a", "b", "c"]})
+        count = exporter._insert_dataframe("test_t", df)
+        assert count == 2  # one duplicate ignored
+        exporter.close()
+
+    def test_normal_insert_without_pk(self, exporter):
+        """Without coId in DataFrame, normal INSERT (no OR IGNORE)."""
+        exporter.connect()
+        exporter.conn.execute(
+            "CREATE TABLE test_t (coId INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)"
+        )
+        exporter.conn.commit()
+        df = pd.DataFrame({"name": ["a", "b"]})
+        count = exporter._insert_dataframe("test_t", df)
+        assert count == 2
+        exporter.close()
+
+
+class TestAddColumnIfMissing:
+    def test_adds_missing_column(self, exporter):
+        exporter.connect()
+        exporter.conn.execute("CREATE TABLE test_t (coId INTEGER, name TEXT)")
+        exporter.conn.commit()
+        exporter._add_column_if_missing("test_t", "extra", "TEXT")
+        cols = exporter._get_table_columns("test_t")
+        assert "extra" in cols
+        exporter.close()
+
+    def test_does_not_duplicate_column(self, exporter):
+        exporter.connect()
+        exporter.conn.execute("CREATE TABLE test_t (coId INTEGER, name TEXT)")
+        exporter.conn.commit()
+        exporter._add_column_if_missing("test_t", "name", "TEXT")
+        cols = exporter._get_table_columns("test_t")
+        assert cols.count("name") == 1
+        exporter.close()
+
+
+class TestCreateExporter:
+    def test_default_returns_sqlite(self):
+        from pipeline.sql_export import create_exporter
+        exp = create_exporter()
+        assert isinstance(exp, SQLExporter)
+
+
 class TestSQLExporterInit:
     def test_default_db_path(self):
         e = SQLExporter(db_path="/tmp/test_init.db")
