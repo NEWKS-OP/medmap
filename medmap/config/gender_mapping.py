@@ -17,7 +17,7 @@ GENDER_MAP = {
 }
 
 
-def normalize_gender(value: str | None) -> str | None:
+def normalize_gender(value) -> str:
     if value is None:
         return None
     cleaned = str(value).strip()
