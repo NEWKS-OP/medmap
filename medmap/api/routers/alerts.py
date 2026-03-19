@@ -81,7 +81,7 @@ def _get_alerts(db) -> list[dict]:
 
 @router.get("")
 async def list_alerts(severity: str = Query(None, description="Filter severity (comma-separated)"), treated: bool = Query(None, description="Filter by treated status")):
-    """List clinical alerts with optional filters."""
+    """List clinical alerts with optional severity and treated filters."""
     db = get_db()
     try:
         alerts = _get_alerts(db)
@@ -103,7 +103,7 @@ async def list_alerts(severity: str = Query(None, description="Filter severity (
 
 @router.patch("/{case_id}/{rule_name}")
 async def mark_alert_treated(case_id: str, rule_name: str, body: dict = Body(default={})) -> dict:
-    """Mark an alert as treated."""
+    """Mark an alert as treated by a specific user."""
     db = get_db()
     try:
         alerts = _get_alerts(db)

@@ -22,7 +22,9 @@ async def get_audit_log(
     limit: int = Query(100, ge=1, le=1000, description="Max results"),
     offset: int = Query(0, ge=0, description="Results offset"),
 ):
-    """Get audit log entries with optional filters."""
+    """Get audit log entries with optional filters.
+
+    Supports filtering by source file and severity level."""
     db = get_db()
     try:
         conditions = []
@@ -58,7 +60,9 @@ async def get_passports(
     problem_type: str = Query(None, description="Filter by problem type"),
     limit: int = Query(200, ge=1, le=1000, description="Max results"),
 ):
-    """Get data passports with optional filters."""
+    """Get data passports with optional filters.
+
+    Supports filtering by status and problem type."""
     db = get_db()
     try:
         conditions = []
@@ -88,7 +92,9 @@ async def get_passports(
 
 @router.get("/completeness")
 async def get_completeness() -> dict:
-    """Get completeness matrix (source x column with % completeness)."""
+    """Get completeness matrix.
+
+    Returns table_name -> column_name -> percentage complete."""
     db = get_db()
     try:
         tables = [

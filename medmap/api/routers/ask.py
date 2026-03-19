@@ -29,7 +29,11 @@ SQL_PATTERNS = [
     (["count", "combien", "total", "how many"], "SELECT 'tbCaseData' as tbl, COUNT(*) as cnt FROM tbCaseData UNION ALL SELECT 'tbImportLabsData', COUNT(*) FROM tbImportLabsData UNION ALL SELECT 'tbImportIcd10Data', COUNT(*) FROM tbImportIcd10Data UNION ALL SELECT 'tbImportDeviceMotionData', COUNT(*) FROM tbImportDeviceMotionData UNION ALL SELECT 'tbImportMedicationInpatientData', COUNT(*) FROM tbImportMedicationInpatientData UNION ALL SELECT 'tbImportNursingDailyReportsData', COUNT(*) FROM tbImportNursingDailyReportsData UNION ALL SELECT 'tbAuditLog', COUNT(*) FROM tbAuditLog"),
 ]
 
-DEFAULT_SQL = "SELECT 'tbCaseData' as tbl, COUNT(*) as cnt FROM tbCaseData UNION ALL SELECT 'tbImportLabsData', COUNT(*) FROM tbImportLabsData UNION ALL SELECT 'tbAuditLog', COUNT(*) FROM tbAuditLog"
+DEFAULT_SQL = (
+    "SELECT 'tbCaseData' as tbl, COUNT(*) as cnt FROM tbCaseData "
+    "UNION ALL SELECT 'tbImportLabsData', COUNT(*) FROM tbImportLabsData "
+    "UNION ALL SELECT 'tbAuditLog', COUNT(*) FROM tbAuditLog"
+)
 
 
 def _question_to_sql(question: str) -> str:
@@ -43,7 +47,10 @@ def _question_to_sql(question: str) -> str:
 
 @router.post("")
 async def ask_data(body: dict = Body(default={"question": ""})):
-    """Ask a question about the data and get SQL + results."""
+    """Ask a natural language question about the data.
+
+    Uses keyword matching to generate SQL (offline fallback).
+    Returns SQL, results, and narrative answer."""
     db = get_db()
     question = body.get("question", "") if body else ""
 

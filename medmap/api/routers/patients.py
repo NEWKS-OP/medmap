@@ -118,7 +118,7 @@ async def get_patient(case_id: str) -> dict:
         return {"case_id": case_id, "patient_id": None, "age": None, "gender": None, "ward": None}
 
 
-# Lab parameter mappings: (display_name, value_col, flag_col, low_col, high_col)
+# Lab parameter mappings: (display_name, value_col, flag_col, ref_low_col, ref_high_col)
 LAB_PARAMS = [
     ("Sodium", "coSodium_mmol_L", "coSodium_flag", "cosodium_ref_low", "cosodium_ref_high"),
     ("Potassium", "coPotassium_mmol_L", "coPotassium_flag", "coPotassium_ref_low", "coPotassium_ref_high"),

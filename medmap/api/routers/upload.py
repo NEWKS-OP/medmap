@@ -16,7 +16,9 @@ router = APIRouter(responses={200: {"description": "Upload results"}})
 
 @router.post("")
 async def upload_files(files: list[UploadFile] = File(..., description="Files to upload for pipeline processing")):
-    """Upload files for processing through the pipeline."""
+    """Upload files for processing through the data ingestion pipeline.
+
+    Accepts CSV, XLSX, and PDF files."""
     from pipeline.ingestion import DataIngester
 
     ingester = DataIngester()

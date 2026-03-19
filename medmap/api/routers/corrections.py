@@ -36,7 +36,9 @@ async def get_pending_corrections() -> list[dict]:
 
 @router.post("/apply")
 async def apply_correction(body: dict = Body(default={})) -> dict:
-    """Apply a manual correction."""
+    """Apply a manual correction to a data value.
+
+    Updates both the audit log and data passport."""
     db = get_db()
     try:
         audit_log_id = body.get("audit_log_id", 0)
@@ -100,7 +102,9 @@ async def apply_correction(body: dict = Body(default={})) -> dict:
 
 @router.post("/rollback")
 async def rollback_correction(body: dict = Body(default={})) -> dict:
-    """Rollback a correction to original value."""
+    """Rollback a correction to its original value.
+
+    Resets the audit log entry and sets passport status back to QUARANTINE."""
     db = get_db()
     try:
         audit_log_id = body.get("audit_log_id", 0)
