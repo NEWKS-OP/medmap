@@ -17,7 +17,9 @@ router = APIRouter(responses={200: {"description": "Overview data"}})
 
 @router.get("/quality-scores")
 async def get_quality_scores() -> list[dict]:
-    """Get quality scores per source file, computed from audit log."""
+    """Get quality scores per source file, computed from audit log.
+
+    Returns a list of SourceQualityScore objects."""
     db = get_db()
     try:
         sources = db.execute(
@@ -68,7 +70,7 @@ async def get_quality_scores() -> list[dict]:
 
 @router.get("/ward-scores")
 async def get_ward_scores() -> list[dict]:
-    """Get ward quality scores."""
+    """Get ward quality scores sorted by score descending."""
     db = get_db()
     try:
         wards = db.execute(
@@ -128,7 +130,7 @@ async def get_ward_scores() -> list[dict]:
 
 @router.post("/generate-report")
 async def generate_report() -> dict:
-    """Generate a quality report summary."""
+    """Generate a quality report in Markdown format."""
     db = get_db()
     try:
         total_cases = db.execute("SELECT COUNT(*) as cnt FROM tbCaseData").fetchone()["cnt"]

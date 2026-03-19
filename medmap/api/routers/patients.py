@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(responses={200: {"description": "Patient data"}})
 
 
-def _find_case(db, case_id: str):
+def _find_case(db: object, case_id: str):
     """Find a case by coCaseIdAlpha or coId."""
     return db.execute(
         "SELECT * FROM tbCaseData WHERE coCaseIdAlpha = ? OR CAST(coId AS TEXT) = ? LIMIT 1",
@@ -29,7 +29,7 @@ def _find_case(db, case_id: str):
     ).fetchone()
 
 
-def _build_patient_summary(db, case) -> dict:
+def _build_patient_summary(db: object, case: object) -> dict:
     """Build a patient summary dict from a case row."""
     internal_id = case["coId"]
     icd = db.execute(
@@ -177,7 +177,7 @@ async def get_patient_labs(case_id: str) -> list[dict]:
 
 @router.get("/{case_id}/timeline")
 async def get_patient_timeline(case_id: str) -> list[dict]:
-    """Get merged timeline events for a patient, sorted by timestamp."""
+    """Get merged timeline events for a patient from all sources, sorted by timestamp."""
     db = get_db()
     try:
         case = _find_case(db, case_id)
@@ -322,7 +322,10 @@ async def get_patient_nursing(case_id: str) -> list[dict]:
 
 @router.get("/{case_id}/convergence")
 async def get_patient_convergence(case_id: str) -> dict:
-    """Get convergence score for a patient (computed on-the-fly)."""
+    """Get convergence score for a patient.
+
+    Score is computed on-the-fly from labs (0-35), motion (0-25),
+    medication (0-20), nursing (0-15), assessment (0-5)."""
     db = get_db()
     try:
         case = _find_case(db, case_id)

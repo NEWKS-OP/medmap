@@ -57,6 +57,7 @@ def _run_pipeline_thread(data_folder: str):
 async def start_pipeline(body: dict = Body(default={"data_folder": "dirty"})):
     """Launch the pipeline in background."""
     if pipeline_state.is_running:
+        logger.warning("Pipeline start rejected - already running")
         return {
             "status": "RUNNING",
             "message": "Pipeline is already running",

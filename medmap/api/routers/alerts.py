@@ -116,6 +116,7 @@ async def mark_alert_treated(case_id: str, rule_name: str, body: dict = Body(def
                 alert["treated_at"] = datetime.now().isoformat()
                 return alert
 
+        logger.warning("Alert not found: case_id=%s, rule_name=%s", case_id, rule_name)
         return {"error": "Alert not found", "case_id": case_id, "rule_name": rule_name}
     except Exception as e:
         logger.error("mark_alert_treated error: %s", e)
