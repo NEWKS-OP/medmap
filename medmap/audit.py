@@ -497,9 +497,10 @@ def audit_database(result):
             except sqlite3.OperationalError:
                 pass
 
-        # Check missing tokens in text columns
+        # Check missing tokens in text columns (skip audit/passport tables which store original values)
         tokens_sql = ",".join(f"'{t}'" for t in MISSING_VALUE_TOKENS if t.strip())
-        for table in sorted(tables & expected):
+        audit_tables = {"tbAuditLog", "tbDataPassport"}
+        for table in sorted((tables & expected) - audit_tables):
             try:
                 cursor.execute(f"PRAGMA table_info([{table}])")
                 cols = [row["name"] for row in cursor.fetchall()]

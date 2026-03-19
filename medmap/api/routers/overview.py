@@ -92,11 +92,15 @@ async def get_ward_scores() -> list[dict]:
                 (ward,),
             ).fetchone()["cnt"]
 
-            case_ids = db.execute(
-                "SELECT DISTINCT coCaseId FROM tbImportIcd10Data WHERE coWard = ?",
+            # Match via coCaseIdAlpha since audit log stores text case_id
+            case_alphas = db.execute(
+                """SELECT DISTINCT cd.coCaseIdAlpha
+                   FROM tbImportIcd10Data icd
+                   JOIN tbCaseData cd ON cd.coId = icd.coCaseId
+                   WHERE icd.coWard = ? AND cd.coCaseIdAlpha IS NOT NULL""",
                 (ward,),
             ).fetchall()
-            case_id_list = [str(c["coCaseId"]) for c in case_ids]
+            case_id_list = [c["coCaseIdAlpha"] for c in case_alphas]
 
             nb_errors = 0
             if case_id_list:

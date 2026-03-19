@@ -119,7 +119,7 @@ LABS_SCHEMA = pa.DataFrameSchema(
 
 MEDICATION_SCHEMA = pa.DataFrameSchema(
     columns={
-        "case_id": Column(object, checks=[_no_missing_tokens()], nullable=True),
+        "case_id": Column(object, checks=[_no_missing_tokens()], nullable=True, required=False),
         "patient_id": Column(object, checks=[_no_missing_tokens()], nullable=True),
         "medication_name": Column(object, nullable=True, required=False),
         "record_type": Column(object, checks=[_valid_event_type()], nullable=True, required=False),

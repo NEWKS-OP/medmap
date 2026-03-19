@@ -23,12 +23,25 @@ logger = logging.getLogger(__name__)
 class DataMapper:
     """Maps cleaned DataFrames to the 7 target SQL tables."""
 
+    NURSING_NOTE_MAX_LEN = 256
+
     def __init__(self, iid_sid_map: Optional[pd.DataFrame] = None):
         self.iid_sid_map = iid_sid_map
         self._sap_decoder: Optional[dict] = None
         self._sid_to_iid: Optional[dict] = None
+        self._pid_lookup: Optional[dict] = None
         self.mapped_tables: dict[str, pd.DataFrame] = {}
         self.mapping_warnings: list[str] = []
+
+    @staticmethod
+    def _safe_isna(v) -> bool:
+        """Check if value is NA/NaN/NaT, handling type errors."""
+        if v is None:
+            return True
+        try:
+            return bool(pd.isna(v))
+        except (TypeError, ValueError):
+            return False
 
     @property
     def sap_decoder(self) -> dict:
@@ -110,13 +123,8 @@ class DataMapper:
 
     def _extract_case_id_numeric(self, val) -> Optional[int]:
         """Extract numeric part from case_id (e.g., 'CASE-0042' -> 42)."""
-        if val is None:
+        if self._safe_isna(val):
             return None
-        try:
-            if pd.isna(val):
-                return None
-        except (TypeError, ValueError):
-            pass
         s = str(val).strip()
         # Extract digits from CASE-XXXX format
         m = re.search(r'(\d+)', s)
@@ -140,13 +148,8 @@ class DataMapper:
         """Convert all columns to string (for nvarchar storage), except excluded."""
         exclude = exclude or set()
         def _to_str(v):
-            if v is None:
+            if DataMapper._safe_isna(v):
                 return None
-            try:
-                if pd.isna(v):
-                    return None
-            except (TypeError, ValueError):
-                pass
             return str(v)
         for col in df.columns:
             if col in exclude:
@@ -212,7 +215,7 @@ class DataMapper:
 
         result = self._convert_case_id_column(result)
         # Resolve missing coCaseId via patient_id lookup
-        if hasattr(self, '_pid_lookup'):
+        if self._pid_lookup:
             result = self._resolve_case_ids(result, self._pid_lookup)
         result = self._to_string_columns(result, exclude={"coCaseId"})
 
@@ -239,7 +242,7 @@ class DataMapper:
 
         result = self._convert_case_id_column(result)
         # Resolve missing coCaseId via patient_id lookup
-        if hasattr(self, '_pid_lookup'):
+        if self._pid_lookup:
             result = self._resolve_case_ids(result, self._pid_lookup)
         result = self._to_string_columns(result, exclude={"coCaseId"})
 
@@ -273,7 +276,7 @@ class DataMapper:
 
         result = self._convert_case_id_column(result)
         # Resolve missing coCaseId via patient_id lookup
-        if hasattr(self, '_pid_lookup'):
+        if self._pid_lookup:
             result = self._resolve_case_ids(result, self._pid_lookup)
         result = self._to_string_columns(result, exclude={"coCaseId"})
 
@@ -304,21 +307,14 @@ class DataMapper:
 
         result = self._convert_case_id_column(result)
         # Resolve missing coCaseId via patient_id lookup
-        if hasattr(self, '_pid_lookup'):
+        if self._pid_lookup:
             result = self._resolve_case_ids(result, self._pid_lookup)
 
         # Truncate nursing notes to 256 chars (nvarchar(256) in schema)
         if "coNursing_note_free_text" in result.columns:
-            def _truncate(v):
-                if v is None:
-                    return None
-                try:
-                    if pd.isna(v):
-                        return None
-                except (TypeError, ValueError):
-                    pass
-                return str(v)[:256]
-            result["coNursing_note_free_text"] = result["coNursing_note_free_text"].apply(_truncate)
+            result["coNursing_note_free_text"] = result["coNursing_note_free_text"].apply(
+                lambda v: None if self._safe_isna(v) else str(v)[:self.NURSING_NOTE_MAX_LEN]
+            )
 
         result = self._to_string_columns(result, exclude={"coCaseId"})
 
@@ -692,14 +688,23 @@ class DataMapper:
 
     def _extract_case_info_minimal(self, df: pd.DataFrame, cases: dict):
         """Extract minimal case info (case_id, patient_id) from any source."""
-        for idx in df.index:
-            case_id = self._get_val(df, idx, "case_id")
+        if "case_id" not in df.columns:
+            return
+        cols = ["case_id"]
+        if "patient_id" in df.columns:
+            cols.append("patient_id")
+        # Deduplicate to avoid iterating 150k+ 1Hz rows
+        dedup = df[cols].dropna(subset=["case_id"]).drop_duplicates(subset=["case_id"], keep="first")
+        for _, row in dedup.iterrows():
+            case_id = str(row["case_id"]).strip()
             if not case_id:
                 continue
             if case_id not in cases:
                 cases[case_id] = {}
-            info = cases[case_id]
-            self._set_if_missing(info, "patient_id", self._get_val(df, idx, "patient_id"))
+            if "patient_id" in cols and not self._safe_isna(row.get("patient_id")):
+                pid = str(row["patient_id"]).strip()
+                if pid:
+                    self._set_if_missing(cases[case_id], "patient_id", pid)
 
     def _extract_case_info_from_epac(self, df: pd.DataFrame, cases: dict):
         """Extract case info from epaAC DataFrame."""
@@ -722,13 +727,8 @@ class DataMapper:
         if col not in df.columns:
             return None
         val = df.at[idx, col]
-        if val is None:
+        if self._safe_isna(val):
             return None
-        try:
-            if pd.isna(val):
-                return None
-        except (TypeError, ValueError):
-            pass
         s = str(val).strip()
         return s if s else None
 
@@ -745,12 +745,17 @@ class DataMapper:
         """Build patient_id -> case_id lookup from sources that have both."""
         lookup = {}
         for fname, df in dataframes.items():
-            if "case_id" in df.columns and "patient_id" in df.columns:
-                for idx in df.index:
-                    case_id = self._get_val(df, idx, "case_id")
-                    pid = self._get_val(df, idx, "patient_id")
-                    if case_id and pid and pid not in lookup:
-                        lookup[pid] = case_id
+            if "case_id" not in df.columns or "patient_id" not in df.columns:
+                continue
+            valid = df[["patient_id", "case_id"]].dropna()
+            if valid.empty:
+                continue
+            dedup = valid.drop_duplicates(subset=["patient_id"], keep="first")
+            for pid, cid in zip(dedup["patient_id"], dedup["case_id"]):
+                pid_s = str(pid).strip()
+                cid_s = str(cid).strip()
+                if pid_s and cid_s and pid_s not in lookup:
+                    lookup[pid_s] = cid_s
         return lookup
 
     def _resolve_case_ids(self, result: pd.DataFrame,

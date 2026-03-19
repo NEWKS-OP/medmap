@@ -224,9 +224,9 @@ async def get_patient_timeline(case_id: str) -> list[dict]:
                 "source_file": None, "alert_message": None,
             })
 
-        # Nursing
+        # Nursing (limit 200)
         for r in db.execute(
-            "SELECT coReport_date, coShift, coNursing_note_free_text FROM tbImportNursingDailyReportsData WHERE coCaseId = ?",
+            "SELECT coReport_date, coShift, coNursing_note_free_text FROM tbImportNursingDailyReportsData WHERE coCaseId = ? LIMIT 200",
             (cid,),
         ).fetchall():
             events.append({
@@ -263,7 +263,7 @@ async def get_patient_medications(case_id: str) -> list[dict]:
         return [
             {
                 "event_type": "MEDICATION",
-                "timestamp": r["coOrder_start_datetime"] or r["administration_datetime"] or "",
+                "timestamp": r["administration_datetime"] or r["coOrder_start_datetime"] or "",
                 "data": {
                     "event_type": r["coRecord_type"],
                     "medication_code_atc": r["coMedication_code_atc"],
