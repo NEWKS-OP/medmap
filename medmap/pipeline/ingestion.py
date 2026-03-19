@@ -376,7 +376,7 @@ class DataIngester:
             if h.startswith("E") and "_I_" in h
         )
 
-        if sap_pattern_count > len(headers2) * 0.3:
+        if sap_pattern_count >= 5 and sap_pattern_count > len(headers2) * 0.3:
             # Line 2 is SAP codes — use line 1 as readable headers, skip line 2
             warnings.append(
                 "Two-line header detected: German names + SAP codes. "

@@ -189,7 +189,7 @@ class SQLExporter:
 
     def _create_tables_from_mapped(self):
         """Fallback: create tables dynamically from mapped DataFrames."""
-        pass  # Will be populated by insert_all if schema file missing
+        logger.warning("No schema file found — tables must be created manually")
 
     def _create_audit_log_table(self):
         """Create the tbAuditLog table."""
@@ -321,12 +321,19 @@ class SQLExporter:
                 logger.error("Insert error for %s (chunk %d): %s",
                              table_name, start // chunk_size, e)
                 # Try row-by-row as fallback
+                failed_count = 0
                 for row_data in rows:
                     try:
                         self.conn.execute(sql, row_data)
                         total_inserted += 1
-                    except sqlite3.Error:
-                        pass
+                    except sqlite3.Error as row_err:
+                        failed_count += 1
+                        if failed_count <= 3:
+                            logger.warning("Row insert failed for %s: %s",
+                                           table_name, row_err)
+                if failed_count > 3:
+                    logger.warning("Suppressed %d more row insert errors for %s",
+                                   failed_count - 3, table_name)
 
         logger.info("Inserted %d rows into %s", total_inserted, table_name)
         return total_inserted
@@ -348,6 +355,22 @@ class SQLExporter:
 
         self.conn.commit()
         return results
+
+    # ──────────────────────────────────────────────
+    # HELPERS
+    # ──────────────────────────────────────────────
+
+    @staticmethod
+    def _normalize_row_number(rn) -> Optional[int]:
+        """Normalize row_number from tuple/list/numpy to int or None."""
+        if rn is None:
+            return None
+        if isinstance(rn, (tuple, list)):
+            rn = rn[0] if rn else None
+        try:
+            return int(rn) if rn is not None else None
+        except (ValueError, TypeError):
+            return None
 
     # ──────────────────────────────────────────────
     # AUDIT LOG EXPORT
@@ -377,14 +400,7 @@ class SQLExporter:
                 severity = e.severity.value if isinstance(e.severity, Severity) else str(e.severity)
                 action = e.action_taken.value if isinstance(e.action_taken, ActionTaken) else str(e.action_taken)
                 ts = e.correction_timestamp.isoformat() if e.correction_timestamp else None
-                rn = e.row_number
-                if rn is not None:
-                    if isinstance(rn, (tuple, list)):
-                        rn = rn[0] if rn else None
-                    try:
-                        rn = int(rn) if rn is not None else None
-                    except (ValueError, TypeError):
-                        rn = None
+                rn = self._normalize_row_number(e.row_number)
                 rows.append((
                     e.source_file, e.case_id, e.table_name, e.column_name,
                     e.original_value, e.cleaned_value, e.error_type,
@@ -466,15 +482,7 @@ class SQLExporter:
                 problem_type = error_to_problem.get(e.error_type, "INVALID")
                 status = action_to_status.get(action, "PENDING_REVIEW")
                 confidence = 0.95 if action == "AUTO_CORRECT" else 0.5
-
-                rn = e.row_number
-                if rn is not None:
-                    if isinstance(rn, (tuple, list)):
-                        rn = rn[0] if rn else None
-                    try:
-                        rn = int(rn) if rn is not None else None
-                    except (ValueError, TypeError):
-                        rn = None
+                rn = self._normalize_row_number(e.row_number)
                 rows.append((
                     e.case_id, e.table_name, e.column_name,
                     e.original_value, e.cleaned_value,
@@ -578,6 +586,8 @@ class MSSQLExporter:
             self.connect()
 
         if os.path.exists(SQL_SCHEMA_PATH):
+            from sqlalchemy import text
+
             with open(SQL_SCHEMA_PATH, "r", encoding="utf-8-sig") as f:
                 tsql = f.read()
 
@@ -588,7 +598,7 @@ class MSSQLExporter:
                     batch = batch.strip()
                     if batch:
                         try:
-                            conn.execute(batch)
+                            conn.execute(text(batch))
                         except Exception as e:
                             logger.warning("Schema batch error: %s", e)
                 conn.commit()

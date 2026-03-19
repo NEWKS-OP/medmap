@@ -187,6 +187,15 @@ class DataCleaner:
                     continue
                 parsed = self._try_parse_date(s)
                 if parsed is not None:
+                    # Reject dates outside valid range
+                    if parsed.year < 2000 or parsed.year > 2030:
+                        self._log_change(
+                            source_file, df, idx, file_type, col,
+                            s, None,
+                            "DATE_OUT_OF_RANGE", Severity.MEDIUM, ActionTaken.QUARANTINE,
+                        )
+                        df.at[idx, col] = None
+                        continue
                     iso = parsed.strftime("%Y-%m-%d %H:%M:%S") if parsed.hour or parsed.minute else parsed.strftime("%Y-%m-%d")
                     if iso != s:
                         self._log_change(

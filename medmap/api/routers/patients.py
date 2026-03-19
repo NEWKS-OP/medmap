@@ -336,7 +336,8 @@ async def get_patient_convergence(case_id: str) -> dict:
                          "coGlucose_flag", "coHb_flag", "coWbc_flag", "coPlatelets_flag",
                          "coCrp_flag", "coAlt_flag", "coAst_flag", "coBilirubin_flag",
                          "coAlbumin_flag", "coInr_flag", "coLactate_flag"]
-            flagged = sum(1 for c in flag_cols if lab[c] and lab[c] in ("H", "HH", "L", "LL"))
+            lab_keys = lab.keys()
+            flagged = sum(1 for c in flag_cols if c in lab_keys and lab[c] and lab[c] in ("H", "HH", "L", "LL"))
             labs_score = min(35, int(flagged * 2.5))
 
         # Motion score (0-25): based on falls

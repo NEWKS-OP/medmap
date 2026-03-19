@@ -582,8 +582,9 @@ class TestMapEpacToTarget:
             "bmi": [26.1],
         })
         result = mapper._map_epac_to_target(df)
-        assert "coE0I005" in result.columns
-        assert "coE0I004" in result.columns
+        assert "coE0I015" in result.columns  # height = E0_I_015
+        assert "coE0I014" in result.columns  # weight = E0_I_014
+        assert "coE0I005" in result.columns  # bmi = E0_I_005
 
     def test_empty_without_case_id(self, mapper):
         df = pd.DataFrame({"val": [1]})
