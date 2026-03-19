@@ -209,15 +209,26 @@ async def get_patient_timeline(case_id: str) -> list[dict]:
                 "source_file": None, "alert_message": None,
             })
 
-        # Nursing (limit 200)
+        # Nursing (limit 200) — with NLP enrichment
         for r in db.execute(
             "SELECT coReport_date, coShift, coNursing_note_free_text FROM tbImportNursingDailyReportsData WHERE coCaseId = ? LIMIT 200",
             (cid,),
         ).fetchall():
+            note_text = r["coNursing_note_free_text"] or ""
+            nlp = analyze_note(note_text) if note_text else {}
             events.append({
                 "event_type": "NURSING", "timestamp": r["coReport_date"] or "",
-                "data": {"shift": r["coShift"], "note": (r["coNursing_note_free_text"] or "")[:200]},
-                "source_file": None, "alert_message": None,
+                "data": {
+                    "shift": normalize_shift(r["coShift"] or ""),
+                    "note": note_text[:200],
+                    "pain_level": nlp.get("pain_level"),
+                    "mobility_status": nlp.get("mobility_status"),
+                    "wound_grade": nlp.get("wound_grade"),
+                    "deterioration_flag": nlp.get("deterioration_flag", False),
+                    "deterioration_signs": nlp.get("deterioration_signs", []),
+                },
+                "source_file": None,
+                "alert_message": "Deterioration detected" if nlp.get("deterioration_flag") else None,
             })
 
         events.sort(key=lambda e: e["timestamp"] or "")
@@ -283,22 +294,81 @@ async def get_patient_nursing(case_id: str) -> list[dict]:
             (case["coId"],),
         ).fetchall()
 
-        return [
-            {
+        results = []
+        for r in rows:
+            note_text = r["coNursing_note_free_text"] or ""
+            nlp = analyze_note(note_text)
+            results.append({
                 "case_id": case_id,
-                "shift": r["coShift"] or "Early",
+                "shift": normalize_shift(r["coShift"] or ""),
                 "report_date": r["coReport_date"] or "",
-                "pain_level": None,
-                "mobility_status": None,
-                "wound_grade": None,
-                "deterioration_flag": False,
-                "deterioration_signs": [],
-            }
-            for r in rows
-        ]
+                "pain_level": nlp["pain_level"],
+                "mobility_status": nlp["mobility_status"],
+                "wound_grade": nlp["wound_grade"],
+                "deterioration_flag": nlp["deterioration_flag"],
+                "deterioration_signs": nlp["deterioration_signs"],
+                "note_preview": note_text[:200] if note_text else "",
+            })
+        return results
     except Exception as e:
         logger.error("get_patient_nursing error: %s", e)
         return []
+
+
+@router.get("/{case_id}/nursing/summary")
+async def get_patient_nursing_summary(case_id: str) -> dict:
+    """Get NLP summary statistics for a patient's nursing notes."""
+    db = get_db()
+    try:
+        case = _find_case(db, case_id)
+        if not case:
+            return {"case_id": case_id, "total_notes": 0, "summary": {}}
+
+        rows = db.execute(
+            "SELECT coNursing_note_free_text FROM tbImportNursingDailyReportsData WHERE coCaseId = ?",
+            (case["coId"],),
+        ).fetchall()
+
+        total = len(rows)
+        pain_count = 0
+        mobility_counts: dict[str, int] = {}
+        wound_count = 0
+        det_count = 0
+        all_signs: dict[str, int] = {}
+
+        for r in rows:
+            note_text = r["coNursing_note_free_text"] or ""
+            if not note_text:
+                continue
+            nlp = analyze_note(note_text)
+            if nlp["pain_level"] is not None:
+                pain_count += 1
+            if nlp["mobility_status"]:
+                mob = nlp["mobility_status"]
+                mobility_counts[mob] = mobility_counts.get(mob, 0) + 1
+            if nlp["wound_grade"]:
+                wound_count += 1
+            if nlp["deterioration_flag"]:
+                det_count += 1
+                for sign in nlp["deterioration_signs"]:
+                    all_signs[sign] = all_signs.get(sign, 0) + 1
+
+        return {
+            "case_id": case_id,
+            "total_notes": total,
+            "summary": {
+                "pain_mentions": pain_count,
+                "mobility_breakdown": mobility_counts,
+                "wound_mentions": wound_count,
+                "deterioration_events": det_count,
+                "top_deterioration_signs": dict(
+                    sorted(all_signs.items(), key=lambda x: -x[1])[:5]
+                ),
+            },
+        }
+    except Exception as e:
+        logger.error("get_patient_nursing_summary error: %s", e)
+        return {"case_id": case_id, "total_notes": 0, "summary": {}}
 
 
 @router.get("/{case_id}/convergence")
@@ -341,12 +411,17 @@ async def get_patient_convergence(case_id: str) -> dict:
         ).fetchone()["cnt"]
         medication_score = min(20, med_count)
 
-        # Nursing score (0-15)
-        nursing_count = db.execute(
-            "SELECT COUNT(*) as cnt FROM tbImportNursingDailyReportsData WHERE coCaseId = ?",
+        # Nursing score (0-15) — boosted by NLP-detected deterioration
+        nursing_rows = db.execute(
+            "SELECT coNursing_note_free_text FROM tbImportNursingDailyReportsData WHERE coCaseId = ?",
             (cid,),
-        ).fetchone()["cnt"]
-        nursing_score = min(15, int(nursing_count * 0.5))
+        ).fetchall()
+        nursing_count = len(nursing_rows)
+        det_count = sum(
+            1 for r in nursing_rows
+            if r["coNursing_note_free_text"] and analyze_note(r["coNursing_note_free_text"] or "")["deterioration_flag"]
+        )
+        nursing_score = min(15, int(nursing_count * 0.3) + det_count * 3)
 
         # Assessment (0-5)
         assessment_score = min(5, db.execute(

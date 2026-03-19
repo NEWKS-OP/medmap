@@ -9,6 +9,7 @@ import logging
 from fastapi import APIRouter, Query
 
 from api.dependencies import get_db
+from pipeline.nlp import analyze_note
 
 logger = logging.getLogger(__name__)
 

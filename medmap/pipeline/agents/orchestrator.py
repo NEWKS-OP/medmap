@@ -15,6 +15,7 @@ from pipeline.validator import DataValidator
 from pipeline.cleaner import DataCleaner
 from pipeline.mapper import DataMapper
 from pipeline.sql_export import SQLExporter
+from pipeline.nlp import NursingNLPAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,8 @@ class PipelineOrchestrator:
         self.cleaner = DataCleaner(self.validator)
         self.mapper: Optional[DataMapper] = None
         self.exporter = SQLExporter(db_path=db_path)
+        self.nlp_analyzer = NursingNLPAnalyzer()
+        self.nlp_results: dict = {}
         self.stats: Optional[PipelineStats] = None
         self._streaming_progress = None
 
@@ -35,7 +38,7 @@ class PipelineOrchestrator:
                       include_split: bool = True) -> Generator[PipelineProgress, None, None]:
         """Run the full pipeline, yielding progress updates."""
         start_time = time.time()
-        total_steps = 5
+        total_steps = 6
         errors = []
 
         try:
@@ -111,16 +114,50 @@ class PipelineOrchestrator:
                 current_step="Cleaning complete",
                 step_number=3,
                 total_steps=total_steps,
-                progress_pct=0.6,
+                progress_pct=0.5,
                 step_detail=f"Cleaned {len(clean_dfs)} files, {len(pid_conflicts)} PID conflicts",
                 errors=errors.copy(),
             )
 
-            # Step 4: Mapping
+            # Step 4: NLP Analysis (nursing notes)
+            yield PipelineProgress(
+                status=PipelineStatus.RUNNING,
+                current_step="Analyzing nursing notes (NLP)",
+                step_number=4,
+                total_steps=total_steps,
+                progress_pct=0.5,
+                step_detail="Extracting pain, mobility, wounds, deterioration",
+            )
+
+            try:
+                self.nlp_results = self.nlp_analyzer.analyze_all(self.ingester.dataframes)
+                nlp_stats = self.nlp_analyzer.get_summary_stats(self.nlp_results)
+                nlp_detail = (
+                    f"{nlp_stats['total_notes_analyzed']} notes, "
+                    f"{nlp_stats['total_patients']} patients, "
+                    f"{nlp_stats['extraction_rate']}% extraction rate"
+                )
+            except Exception as e:
+                logger.warning("NLP analysis failed (non-fatal): %s", e)
+                self.nlp_results = {}
+                nlp_detail = f"NLP skipped: {e}"
+                errors.append(f"NLP: {e}")
+
+            yield PipelineProgress(
+                status=PipelineStatus.RUNNING,
+                current_step="NLP analysis complete",
+                step_number=4,
+                total_steps=total_steps,
+                progress_pct=0.6,
+                step_detail=nlp_detail,
+                errors=errors.copy(),
+            )
+
+            # Step 5: Mapping
             yield PipelineProgress(
                 status=PipelineStatus.RUNNING,
                 current_step="Mapping to target schema",
-                step_number=4,
+                step_number=5,
                 total_steps=total_steps,
                 progress_pct=0.6,
                 step_detail="Mapping to 7 SQL tables",
@@ -136,18 +173,18 @@ class PipelineOrchestrator:
             yield PipelineProgress(
                 status=PipelineStatus.RUNNING,
                 current_step="Mapping complete",
-                step_number=4,
+                step_number=5,
                 total_steps=total_steps,
                 progress_pct=0.8,
                 step_detail=f"Mapped {sum(len(df) for df in mapped.values() if df is not None and not df.empty)} total rows",
                 errors=errors.copy(),
             )
 
-            # Step 5: SQL Export
+            # Step 6: SQL Export
             yield PipelineProgress(
                 status=PipelineStatus.RUNNING,
                 current_step="Exporting to SQLite",
-                step_number=5,
+                step_number=6,
                 total_steps=total_steps,
                 progress_pct=0.8,
                 step_detail="Creating database and inserting data",
@@ -186,7 +223,7 @@ class PipelineOrchestrator:
             yield PipelineProgress(
                 status=PipelineStatus.COMPLETED,
                 current_step="Pipeline complete",
-                step_number=5,
+                step_number=6,
                 total_steps=total_steps,
                 progress_pct=1.0,
                 step_detail=f"Exported {export_summary.get('total_rows', 0)} rows in {elapsed:.1f}s",
