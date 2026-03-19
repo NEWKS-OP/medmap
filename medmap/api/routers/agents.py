@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(responses={200: {"description": "Agent data"}})
 
 
-def _compute_agent_stats(db) -> dict:
+def _compute_agent_stats(db: object) -> dict:
     """Compute agent statistics from the database."""
     try:
         total_cols = db.execute(
@@ -53,7 +53,7 @@ def _compute_agent_stats(db) -> dict:
         return {"total_columns": 0, "auto_mapped": 0, "conflicts": 0, "escalated": 0, "agent_progress": {}}
 
 
-def _get_column_mappings(db, badge=None, source=None, status=None, limit=100) -> list[dict]:
+def _get_column_mappings(db: object, badge: str = None, source: str = None, status: str = None, limit: int = 100) -> list[dict]:
     """Get column mappings from audit log."""
     try:
         conditions = ["action_taken IN ('AUTO_CORRECT', 'QUARANTINE', 'FLAGGED')"]
@@ -128,7 +128,7 @@ async def get_mappings(
 
 
 @router.get("/decisions")
-async def get_decisions(limit: int = Query(20)):
+async def get_decisions(limit: int = Query(20, ge=1, le=200, description="Max decisions to return")):
     """Get recent agent decisions."""
     db = get_db()
     return _get_column_mappings(db, limit=limit)

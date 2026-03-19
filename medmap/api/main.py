@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("MEDMAP API starting up - v1.0.0")
     yield
-    logger.info("MEDMAP API shutting down")
+    logger.info("MEDMAP API shutting down - closing connections")
     close_db()
 
 

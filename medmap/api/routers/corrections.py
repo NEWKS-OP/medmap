@@ -40,6 +40,8 @@ async def apply_correction(body: dict = Body(default={})) -> dict:
     db = get_db()
     try:
         audit_log_id = body.get("audit_log_id", 0)
+        if not audit_log_id:
+            return {"success": False, "audit_log_id": 0, "previous_value": None, "new_value": None, "action": "MANUAL_CORRECT", "error": "audit_log_id is required"}
         case_id = body.get("case_id", "")
         column_name = body.get("column_name", "")
         new_value = body.get("new_value")
@@ -102,6 +104,8 @@ async def rollback_correction(body: dict = Body(default={})) -> dict:
     db = get_db()
     try:
         audit_log_id = body.get("audit_log_id", 0)
+        if not audit_log_id:
+            return {"success": False, "audit_log_id": 0, "previous_value": None, "new_value": None, "action": "ROLLBACK", "error": "audit_log_id is required"}
 
         audit_entry = db.execute(
             "SELECT * FROM tbAuditLog WHERE coId = ?", (audit_log_id,)

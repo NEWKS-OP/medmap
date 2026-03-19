@@ -63,6 +63,7 @@ async def start_pipeline(body: dict = Body(default={"data_folder": "dirty"})):
         }
 
     data_folder = body.get("data_folder", "dirty") if body else "dirty"
+    logger.info("Pipeline start requested for folder: %s", data_folder)
     pipeline_state.is_running = True
     pipeline_state.update_progress(PipelineProgress(
         status=PipelineStatus.RUNNING,

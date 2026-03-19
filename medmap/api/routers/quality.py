@@ -121,6 +121,7 @@ async def get_completeness() -> dict:
             except Exception:
                 continue
 
+        logger.info("Computed completeness for %d tables", len(result))
         return result
     except Exception as e:
         logger.error("completeness error: %s", e)

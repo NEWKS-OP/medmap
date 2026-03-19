@@ -47,7 +47,7 @@ async def ask_data(body: dict = Body(default={"question": ""})):
     db = get_db()
     question = body.get("question", "") if body else ""
 
-    if not question:
+    if not question or not question.strip():
         return {
             "question": "", "sql_generated": "", "results_as_dicts": None,
             "narrative_answer": None, "error": "No question provided",

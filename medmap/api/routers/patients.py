@@ -186,7 +186,7 @@ async def get_patient_timeline(case_id: str) -> list[dict]:
         return []
 
         cid = case["coId"]
-        events = []
+        events: list[dict] = []
 
         # Labs
         for r in db.execute(
@@ -410,7 +410,7 @@ async def get_patient_passports(case_id: str) -> list[dict]:
     db = get_db()
     try:
         rows = db.execute(
-            "SELECT * FROM tbDataPassport WHERE case_id = ? OR case_id LIKE ? LIMIT 200",
+            "SELECT * FROM tbDataPassport WHERE case_id = ? OR case_id LIKE ? ORDER BY passport_id DESC LIMIT 200",
             (case_id, f"%{case_id}%"),
         ).fetchall()
         return rows_to_dicts(rows)
