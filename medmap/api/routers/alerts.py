@@ -95,7 +95,7 @@ def _get_alerts(db: object) -> list[dict]:
 
 
 @router.get("")
-async def list_alerts(severity: str = Query(None, description="Filter severity (comma-separated)"), treated: bool = Query(None, description="Filter by treated status")):
+async def list_alerts(severity: str = Query(None, description="Filter severity (comma-separated)"), treated: bool = Query(None, description="Filter by treated status"), limit: int = Query(200, ge=1, le=10000, description="Max results")):
     """List clinical alerts with optional severity and treated filters."""
     db = get_db()
     try:
@@ -109,6 +109,7 @@ async def list_alerts(severity: str = Query(None, description="Filter severity (
         if treated is not None:
             result = [a for a in result if a["is_treated"] == treated]
 
+        result = result[:limit]
         logger.info("Returning %d alerts", len(result))
         return result
     except Exception as e:

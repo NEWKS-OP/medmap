@@ -127,10 +127,11 @@ async def get_mappings(
     badge: str = Query(None, description="Filter by confidence badge"),
     source: str = Query(None, description="Filter by source file"),
     status: str = Query(None, description="Filter by mapping status"),
+    limit: int = Query(100, ge=1, le=1000, description="Max results"),
 ):
     """Get column mappings with optional badge, source, and status filters."""
     db = get_db()
-    return _get_column_mappings(db, badge=badge, source=source, status=status)
+    return _get_column_mappings(db, badge=badge, source=source, status=status, limit=limit)
 
 
 @router.get("/decisions")

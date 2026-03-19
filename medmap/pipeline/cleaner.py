@@ -114,6 +114,12 @@ class DataCleaner:
         # 2.10 Normalize lab flags
         df = self._normalize_lab_flags(df, source_file, file_type)
 
+        # 2.11 Normalize shifts (nursing)
+        df = self._normalize_shifts(df, source_file, file_type)
+
+        # 2.12 Normalize event types (medication)
+        df = self._normalize_event_types(df, source_file, file_type)
+
         # Preserve attrs
         df.attrs = {**df.attrs, "source_file": source_file, "file_type": file_type}
         return df
@@ -144,7 +150,11 @@ class DataCleaner:
             return False  # Already None/NaN, no normalization needed
         if isinstance(val, float) and np.isnan(val):
             return False
-        s = str(val).strip().lower()
+        raw = str(val)
+        # Whitespace-only strings are missing
+        if raw.strip() == "" and raw != "":
+            return True
+        s = raw.strip().lower()
         return s in MISSING_VALUE_TOKENS and s != ""
 
     # ──────────────────────────────────────────────
@@ -691,6 +701,119 @@ class DataCleaner:
             row_number=idx if isinstance(idx, int) else None,
         )
         self.validator.audit_log.append(entry)
+
+    # ──────────────────────────────────────────────
+    # 2.11 SHIFT NORMALIZATION
+    # ──────────────────────────────────────────────
+
+    SHIFT_MAP = {
+        "early": "Early", "early shift": "Early", "frühschicht": "Early",
+        "fruhschicht": "Early", "fruehschicht": "Early", "frhschicht": "Early",
+        "late": "Late", "late shift": "Late", "spätschicht": "Late",
+        "spatschicht": "Late", "spaetschicht": "Late", "sptschicht": "Late",
+        "night": "Night", "night shift": "Night", "nachtschicht": "Night",
+    }
+
+    def _normalize_shifts(self, df, source_file, file_type):
+        """Normalize shift values to Early/Late/Night."""
+        shift_col = None
+        for col in ("shift", "Shift", "coShift"):
+            if col in df.columns:
+                shift_col = col
+                break
+        if shift_col is None:
+            return df
+
+        for idx in df.index:
+            val = df.at[idx, shift_col]
+            if pd.isna(val) if isinstance(val, float) else val is None:
+                continue
+            raw = str(val)
+            # First try matching with original value (preserves umlauts)
+            normalized = self.SHIFT_MAP.get(raw.strip().lower())
+            if normalized is None:
+                # Then try with special chars stripped
+                cleaned = SPECIAL_CHARS_PATTERN.sub("", raw).strip()
+                normalized = self.SHIFT_MAP.get(cleaned.lower())
+            if normalized is None:
+                # Try partial match on both raw and cleaned
+                raw_lower = raw.strip().lower()
+                cleaned_lower = SPECIAL_CHARS_PATTERN.sub("", raw).strip().lower()
+                if any(k in s for s in (raw_lower, cleaned_lower) for k in ("early", "früh", "fruh", "frh")):
+                    normalized = "Early"
+                elif any(k in s for s in (raw_lower, cleaned_lower) for k in ("late", "spät", "spat", "spt")):
+                    normalized = "Late"
+                elif any(k in s for s in (raw_lower, cleaned_lower) for k in ("night", "nacht")):
+                    normalized = "Night"
+            if normalized and normalized != raw:
+                df.at[idx, shift_col] = normalized
+                self._log_change(
+                    source_file, df, idx, file_type, shift_col,
+                    raw, normalized,
+                    "SHIFT_NORMALIZED", Severity.LOW, ActionTaken.AUTO_CORRECT,
+                )
+            elif normalized is None and raw.strip():
+                df.at[idx, shift_col] = np.nan
+                self._log_change(
+                    source_file, df, idx, file_type, shift_col,
+                    raw, None,
+                    "SHIFT_INVALID", Severity.MEDIUM, ActionTaken.FLAGGED,
+                )
+        return df
+
+    # ──────────────────────────────────────────────
+    # 2.12 EVENT TYPE NORMALIZATION
+    # ──────────────────────────────────────────────
+
+    VALID_EVENT_TYPES = {"ORDER", "CHANGE", "ADMIN"}
+
+    def _normalize_event_types(self, df, source_file, file_type):
+        """Normalize medication event/record types to ORDER/CHANGE/ADMIN."""
+        type_col = None
+        for col in ("event_type", "record_type", "rec_type"):
+            if col in df.columns:
+                type_col = col
+                break
+        if type_col is None:
+            return df
+
+        for idx in df.index:
+            val = df.at[idx, type_col]
+            if pd.isna(val) if isinstance(val, float) else val is None:
+                continue
+            raw = str(val)
+            # Strip special chars
+            cleaned = SPECIAL_CHARS_PATTERN.sub("", raw).strip().upper()
+            if cleaned in self.VALID_EVENT_TYPES:
+                if cleaned != raw:
+                    df.at[idx, type_col] = cleaned
+                    self._log_change(
+                        source_file, df, idx, file_type, type_col,
+                        raw, cleaned,
+                        "EVENT_TYPE_NORMALIZED", Severity.LOW, ActionTaken.AUTO_CORRECT,
+                    )
+            elif raw.strip():
+                # Try to extract valid type from contaminated value
+                extracted = None
+                for et in self.VALID_EVENT_TYPES:
+                    if et in cleaned:
+                        extracted = et
+                        break
+                if extracted:
+                    df.at[idx, type_col] = extracted
+                    self._log_change(
+                        source_file, df, idx, file_type, type_col,
+                        raw, extracted,
+                        "EVENT_TYPE_EXTRACTED", Severity.LOW, ActionTaken.AUTO_CORRECT,
+                    )
+                else:
+                    df.at[idx, type_col] = np.nan
+                    self._log_change(
+                        source_file, df, idx, file_type, type_col,
+                        raw, None,
+                        "EVENT_TYPE_INVALID", Severity.MEDIUM, ActionTaken.FLAGGED,
+                    )
+        return df
 
     def _extract_case_id(self, df, idx) -> str:
         for col in ("case_id", "coCaseId", "FallID"):
