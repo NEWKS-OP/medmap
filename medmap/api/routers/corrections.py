@@ -21,7 +21,7 @@ router = APIRouter(responses={200: {"description": "Correction results"}})
 
 
 @router.get("/pending")
-async def get_pending_corrections():
+async def get_pending_corrections() -> list[dict]:
     """Get data passports pending review."""
     db = get_db()
     try:
@@ -35,7 +35,7 @@ async def get_pending_corrections():
 
 
 @router.post("/apply")
-async def apply_correction(body: dict = Body(default={})):
+async def apply_correction(body: dict = Body(default={})) -> dict:
     """Apply a manual correction."""
     db = get_db()
     try:
@@ -96,7 +96,7 @@ async def apply_correction(body: dict = Body(default={})):
 
 
 @router.post("/rollback")
-async def rollback_correction(body: dict = Body(default={})):
+async def rollback_correction(body: dict = Body(default={})) -> dict:
     """Rollback a correction to original value."""
     db = get_db()
     try:
@@ -155,6 +155,6 @@ async def rollback_correction(body: dict = Body(default={})):
 
 
 @router.get("/history")
-async def get_history():
+async def get_history() -> list[dict]:
     """Get correction history."""
     return get_correction_history_list()

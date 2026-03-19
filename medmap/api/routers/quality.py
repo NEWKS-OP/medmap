@@ -87,7 +87,7 @@ async def get_passports(
 
 
 @router.get("/completeness")
-async def get_completeness():
+async def get_completeness() -> dict:
     """Get completeness matrix (source x column with % completeness)."""
     db = get_db()
     try:

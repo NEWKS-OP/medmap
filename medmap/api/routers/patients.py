@@ -103,7 +103,7 @@ async def list_patients(ward: str = Query(None, description="Filter by ward name
 
 
 @router.get("/{case_id}")
-async def get_patient(case_id: str):
+async def get_patient(case_id: str) -> dict:
     """Get patient summary."""
     db = get_db()
     try:
@@ -137,7 +137,7 @@ LAB_PARAMS = [
 
 
 @router.get("/{case_id}/labs")
-async def get_patient_labs(case_id: str):
+async def get_patient_labs(case_id: str) -> list[dict]:
     """Get lab results for a patient."""
     db = get_db()
     try:
@@ -170,7 +170,7 @@ async def get_patient_labs(case_id: str):
 
 
 @router.get("/{case_id}/timeline")
-async def get_patient_timeline(case_id: str):
+async def get_patient_timeline(case_id: str) -> list[dict]:
     """Get merged timeline events for a patient, sorted by timestamp."""
     db = get_db()
     try:
@@ -233,7 +233,7 @@ async def get_patient_timeline(case_id: str):
 
 
 @router.get("/{case_id}/medications")
-async def get_patient_medications(case_id: str):
+async def get_patient_medications(case_id: str) -> list[dict]:
     """Get medication events for a patient."""
     db = get_db()
     try:

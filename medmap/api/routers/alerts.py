@@ -101,7 +101,7 @@ async def list_alerts(severity: str = Query(None, description="Filter severity (
 
 
 @router.patch("/{case_id}/{rule_name}")
-async def mark_alert_treated(case_id: str, rule_name: str, body: dict = Body(default={})):
+async def mark_alert_treated(case_id: str, rule_name: str, body: dict = Body(default={})) -> dict:
     """Mark an alert as treated."""
     db = get_db()
     try:
