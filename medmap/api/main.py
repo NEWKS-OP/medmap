@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("MEDMAP API starting up")
+    logger.info("MEDMAP API starting up - v1.0.0")
     yield
     logger.info("MEDMAP API shutting down")
     close_db()

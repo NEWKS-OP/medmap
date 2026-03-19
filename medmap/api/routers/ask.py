@@ -80,6 +80,7 @@ async def ask_data(body: dict = Body(default={"question": ""})):
             "execution_time_ms": round(elapsed_ms, 1),
         }
         add_ask_history(entry)
+        logger.info("Ask query: %s -> %d results in %.1fms", question[:50], len(results), elapsed_ms)
         return entry
 
     except Exception as e:

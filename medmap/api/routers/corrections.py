@@ -71,6 +71,7 @@ async def apply_correction(body: dict = Body(default={})) -> dict:
         )
 
         db.commit()
+        logger.info("Applied correction audit_log_id=%d by=%s", audit_log_id, corrected_by)
 
         result = {
             "success": True,
@@ -132,6 +133,7 @@ async def rollback_correction(body: dict = Body(default={})) -> dict:
         )
 
         db.commit()
+        logger.info("Applied correction audit_log_id=%d by=%s", audit_log_id, corrected_by)
 
         result = {
             "success": True,

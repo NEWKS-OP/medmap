@@ -63,7 +63,7 @@ def _build_alerts(db) -> list[dict]:
             "sources_involved": sources,
             "triggered_values": triggered,
             "timestamp_generated": datetime.now().isoformat(),
-            "sbar": None,
+            "sbar": {"S": f"Patient {cid} has {len(entries)} critical data issues", "B": f"Sources involved: {\", \".join(sources[:3])}", "A": f"Issue types: {\", \".join(error_types)}", "R": "Review flagged values and validate corrections"} if len(entries) > 2 else None,
             "is_treated": False,
             "treated_by": None,
             "treated_at": None,
@@ -94,6 +94,7 @@ async def list_alerts(severity: str = Query(None, description="Filter severity (
         if treated is not None:
             result = [a for a in result if a["is_treated"] == treated]
 
+        logger.info("Returning %d alerts", len(result))
         return result
     except Exception as e:
         logger.error("list_alerts error: %s", e)
