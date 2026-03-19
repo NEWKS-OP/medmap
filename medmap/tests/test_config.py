@@ -389,3 +389,79 @@ class TestColumnSignatures:
                      "epaAC_german"]
         for t in expected:
             assert t in COLUMN_SIGNATURES
+
+
+class TestDetectFileTypeEdgeCases:
+    def test_empty_columns(self):
+        assert detect_file_type([]) == "unknown"
+
+    def test_partial_labs_columns(self):
+        cols = ["case_id", "patient_id"]
+        result = detect_file_type(cols)
+        assert result in ("labs", "unknown", "icd10_ops", "medication", "nursing")
+
+    def test_case_data_columns(self):
+        cols = ["case_id", "patient_id", "ward", "admission_date", "discharge_date", "age", "gender"]
+        result = detect_file_type(cols)
+        assert result in ("icd10_ops", "case_data", "unknown")
+
+    def test_mixed_columns(self):
+        cols = ["case_id", "patient_id", "sodium_mmol_L", "primary_icd10_code"]
+        result = detect_file_type(cols)
+        assert result in ("labs", "icd10_ops")
+
+
+class TestInferTypeFromFilenameEdgeCases:
+    def test_uppercase_filename(self):
+        result = infer_type_from_filename("SYNTH_LABS.CSV")
+        assert result in ("labs", "unknown")
+
+    def test_nested_path(self):
+        result = infer_type_from_filename("data/dirty/synth_labs.csv")
+        assert result == "labs"
+
+    def test_xlsx_extension(self):
+        result = infer_type_from_filename("clinic_4_epaAC-Data.xlsx")
+        assert result in ("epaAC_german", "unknown")
+
+    def test_no_extension(self):
+        result = infer_type_from_filename("random_file")
+        assert result == "unknown"
+
+
+class TestClinicalRangesCompleteness:
+    def test_has_wbc(self):
+        assert "wbc_10e9_L" in CLINICAL_RANGES
+
+    def test_has_platelets(self):
+        assert "platelets_10e9_L" in CLINICAL_RANGES
+
+    def test_has_crp(self):
+        assert "crp_mg_L" in CLINICAL_RANGES
+
+    def test_has_egfr(self):
+        assert "egfr_mL_min" in CLINICAL_RANGES
+
+    def test_all_ranges_positive(self):
+        for col, (low, high) in CLINICAL_RANGES.items():
+            assert low >= 0, f"{col}: negative low bound"
+
+
+class TestAnomalyRulesCompleteness:
+    def test_all_rules_have_conditions(self):
+        for name, rule in ANOMALY_RULES.items():
+            assert "conditions" in rule, f"{name} missing conditions"
+
+    def test_all_rules_have_message_string(self):
+        for name, rule in ANOMALY_RULES.items():
+            assert isinstance(rule["message"], str), f"{name} message not string"
+
+    def test_aki_has_correct_severity(self):
+        assert ANOMALY_RULES["AKI_PROBABLE"]["severity"] == "CRITICAL"
+
+    def test_sepsis_has_conditions(self):
+        rule = ANOMALY_RULES["SEPSIS_POSSIBLE"]
+        assert len(rule["conditions"]) > 0
+
+    def test_fall_risk_severity(self):
+        assert ANOMALY_RULES["HIGH_FALL_RISK"]["severity"] in ("CRITICAL", "HIGH")

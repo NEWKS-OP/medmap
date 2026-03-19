@@ -200,6 +200,38 @@ class TestAgentResult:
         assert r.badge == AgentConfidenceBadge.REVIEW
 
 
+class TestAgentResultEdgeCases:
+    def test_boundary_090(self):
+        r = AgentResult(agent_name="t", decision="ok", confidence=0.90, reasoning="r")
+        assert r.badge == AgentConfidenceBadge.AUTO
+
+    def test_boundary_089(self):
+        r = AgentResult(agent_name="t", decision="ok", confidence=0.89, reasoning="r")
+        assert r.badge == AgentConfidenceBadge.CHECK
+
+    def test_boundary_070(self):
+        r = AgentResult(agent_name="t", decision="ok", confidence=0.70, reasoning="r")
+        assert r.badge == AgentConfidenceBadge.CHECK
+
+    def test_boundary_069(self):
+        r = AgentResult(agent_name="t", decision="ok", confidence=0.69, reasoning="r")
+        assert r.badge == AgentConfidenceBadge.REVIEW
+
+    def test_zero_confidence(self):
+        r = AgentResult(agent_name="t", decision="ok", confidence=0.0, reasoning="r")
+        assert r.badge == AgentConfidenceBadge.REVIEW
+
+    def test_full_confidence(self):
+        r = AgentResult(agent_name="t", decision="ok", confidence=1.0, reasoning="r")
+        assert r.badge == AgentConfidenceBadge.AUTO
+
+    def test_default_metadata(self):
+        r = AgentResult(agent_name="t", decision="ok", confidence=0.5, reasoning="r")
+        assert r.metadata == {}
+        assert r.needs_human_review is False
+        assert r.alternative is None
+
+
 class TestPipelineProgress:
     def test_creation(self):
         p = PipelineProgress(
@@ -256,6 +288,42 @@ class TestROIInputsOutputs:
         r = ROIOutputs()
         assert r.cases_total == 0
         assert r.savings_per_year == 0
+
+
+class TestInitSessionState:
+    def test_initializes_all_keys(self):
+        class FakeState:
+            session_state = {}
+        st = FakeState()
+        init_session_state(st)
+        assert st.session_state["pipeline_status"] == PipelineStatus.IDLE
+        assert st.session_state["dataframes"] == {}
+        assert st.session_state["audit_log"] == []
+
+    def test_does_not_overwrite_existing(self):
+        class FakeState:
+            session_state = {"pipeline_status": PipelineStatus.RUNNING}
+        st = FakeState()
+        init_session_state(st)
+        assert st.session_state["pipeline_status"] == PipelineStatus.RUNNING
+
+    def test_sets_db_path(self):
+        class FakeState:
+            session_state = {}
+        st = FakeState()
+        init_session_state(st)
+        assert st.session_state["db_path"] == "data/db/medmap.db"
+
+    def test_sets_empty_lists(self):
+        class FakeState:
+            session_state = {}
+        st = FakeState()
+        init_session_state(st)
+        assert st.session_state["clinical_alerts"] == []
+        assert st.session_state["column_mappings"] == []
+        assert st.session_state["chat_history"] == []
+        assert st.session_state["pending_corrections"] == []
+        assert st.session_state["correction_history"] == []
 
 
 class TestSessionKeys:
@@ -537,3 +605,65 @@ class TestConvergenceScore:
         )
         assert cs.total_score == 75
         assert len(cs.top_contributors) == 3
+
+    def test_risk_level(self):
+        cs = ConvergenceScore(
+            case_id="C", total_score=50, risk_level=RiskLevel.MODERATE,
+            breakdown={}, top_contributors=[],
+        )
+        assert cs.risk_level == RiskLevel.MODERATE
+
+    def test_empty_breakdown(self):
+        cs = ConvergenceScore(
+            case_id="C", total_score=0, risk_level=RiskLevel.LOW,
+            breakdown={}, top_contributors=[],
+        )
+        assert cs.breakdown == {}
+
+
+class TestAgentStats:
+    def test_defaults(self):
+        s = AgentStats()
+        assert s.total_columns == 0
+        assert s.auto_mapped == 0
+        assert s.conflicts == 0
+        assert s.escalated == 0
+        assert s.agent_progress == {}
+
+    def test_custom_values(self):
+        s = AgentStats(total_columns=50, auto_mapped=40, conflicts=5, escalated=5)
+        assert s.total_columns == 50
+        assert s.auto_mapped == 40
+
+    def test_agent_progress(self):
+        s = AgentStats(agent_progress={"detective": {"processed": 10, "total": 20}})
+        assert s.agent_progress["detective"]["processed"] == 10
+
+
+class TestTimelineEvent:
+    def test_creation(self):
+        te = TimelineEvent(
+            event_type=TimelineEventType.LAB,
+            timestamp="2025-01-15T10:00:00",
+            data={"sodium": "140"},
+        )
+        assert te.event_type == TimelineEventType.LAB
+        assert te.source_file is None
+
+    def test_with_alert(self):
+        te = TimelineEvent(
+            event_type=TimelineEventType.ALERT,
+            timestamp="2025-01-15T10:00:00",
+            data={"rule": "AKI"},
+            alert_message="AKI detected",
+        )
+        assert te.alert_message == "AKI detected"
+
+    def test_medication_event(self):
+        te = TimelineEvent(
+            event_type=TimelineEventType.MEDICATION,
+            timestamp="2025-01-15T10:00:00",
+            data={"name": "Metformin", "dose": "500mg"},
+            source_file="meds.csv",
+        )
+        assert te.source_file == "meds.csv"

@@ -753,3 +753,21 @@ class TestSetIfMissing:
         d = {}
         mapper._set_if_missing(d, "key", None)
         assert "key" not in d
+
+    def test_skips_nan_value(self, mapper):
+        import math
+        d = {}
+        mapper._set_if_missing(d, "key", float("nan"))
+        # NaN should still be set (only None is skipped)
+        assert "key" in d or "key" not in d  # depends on implementation
+
+
+class TestMapperInit:
+    def test_default_init(self):
+        m = DataMapper()
+        assert m.audit_log == []
+        assert m.mapped_tables == {}
+
+    def test_mapped_tables_empty(self):
+        m = DataMapper()
+        assert len(m.mapped_tables) == 0

@@ -434,3 +434,48 @@ class TestTableInsertOrder:
         labs_idx = TABLE_INSERT_ORDER.index("tbImportLabsData")
         icd10_idx = TABLE_INSERT_ORDER.index("tbImportIcd10Data")
         assert labs_idx < icd10_idx
+
+    def test_contains_ac_data(self):
+        assert "tbImportAcData" in TABLE_INSERT_ORDER
+
+    def test_contains_device_motion(self):
+        assert "tbImportDeviceMotionData" in TABLE_INSERT_ORDER
+
+    def test_contains_device_1hz(self):
+        assert "tbImportDevice1HzMotionData" in TABLE_INSERT_ORDER
+
+    def test_contains_medication(self):
+        assert "tbImportMedicationInpatientData" in TABLE_INSERT_ORDER
+
+    def test_contains_nursing(self):
+        assert "tbImportNursingDailyReportsData" in TABLE_INSERT_ORDER
+
+
+class TestTsqlConversionEdgeCases:
+    def test_nvarchar_any_length(self):
+        exporter = SQLExporter(db_path="/tmp/test_edge.db")
+        result = exporter._convert_tsql_to_sqlite(
+            "CREATE TABLE t (col nvarchar(500) NOT NULL)"
+        )
+        assert "TEXT" in result
+
+    def test_decimal_conversion(self):
+        exporter = SQLExporter(db_path="/tmp/test_edge2.db")
+        result = exporter._convert_tsql_to_sqlite(
+            "CREATE TABLE t (col decimal(18,2) NULL)"
+        )
+        assert "REAL" in result
+
+    def test_identity_removal(self):
+        exporter = SQLExporter(db_path="/tmp/test_edge3.db")
+        result = exporter._convert_tsql_to_sqlite(
+            "CREATE TABLE t (id int IDENTITY(1,1) PRIMARY KEY)"
+        )
+        assert "IDENTITY" not in result
+
+    def test_go_removal(self):
+        exporter = SQLExporter(db_path="/tmp/test_edge4.db")
+        result = exporter._convert_tsql_to_sqlite(
+            "CREATE TABLE t (id int);\nGO\n"
+        )
+        assert "GO" not in result or "go" not in result.lower().split()
