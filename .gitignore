@@ -1,0 +1,28 @@
+# macOS
+.DS_Store
+
+# Data files
+medmap/data/
+
+# Reference repos
+reference_repos/
+
+# Frontend template
+frontend_temp/
+
+# Analysis PDF
+epaCC_START_Hack_2026_Analysis.pdf
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
