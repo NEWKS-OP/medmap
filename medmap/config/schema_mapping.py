@@ -272,7 +272,7 @@ ICD10_MAPPING = {
     "primary_icd10_code": "coPrimary_icd10_code",
     "primary_icd10_description_en": "coPrimary_icd10_description_en",
     "secondary_icd10_codes": "coSecondary_icd10_codes",
-    "secondary_icd10_descriptions_en": "cpSecondary_icd10_descriptions_en",
+    "secondary_icd10_descriptions_en": "coSecondary_icd10_descriptions_en",
     "ops_codes": "coOps_codes",
     "ops_descriptions_en": "ops_descriptions_en",
 }
