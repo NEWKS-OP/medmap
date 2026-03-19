@@ -280,8 +280,14 @@ class SQLExporter:
                     val = row.get(col)
                     if val is None or (isinstance(val, float) and np.isnan(val)):
                         values.append(None)
+                    elif isinstance(val, (np.integer,)):
+                        values.append(int(val))
+                    elif isinstance(val, (np.floating,)):
+                        values.append(float(val))
+                    elif isinstance(val, (int, float)):
+                        values.append(val)
                     else:
-                        values.append(str(val) if not isinstance(val, (int, float)) else val)
+                        values.append(str(val))
                 rows.append(tuple(values))
 
             try:
@@ -347,17 +353,25 @@ class SQLExporter:
                 severity = e.severity.value if isinstance(e.severity, Severity) else str(e.severity)
                 action = e.action_taken.value if isinstance(e.action_taken, ActionTaken) else str(e.action_taken)
                 ts = e.correction_timestamp.isoformat() if e.correction_timestamp else None
+                rn = e.row_number
+                if rn is not None:
+                    if isinstance(rn, (tuple, list)):
+                        rn = rn[0] if rn else None
+                    try:
+                        rn = int(rn) if rn is not None else None
+                    except (ValueError, TypeError):
+                        rn = None
                 rows.append((
                     e.source_file, e.case_id, e.table_name, e.column_name,
                     e.original_value, e.cleaned_value, e.error_type,
-                    severity, action, e.corrected_by, ts, e.row_number,
+                    severity, action, e.corrected_by, ts, rn,
                 ))
 
             try:
                 self.conn.executemany(sql, rows)
                 total += len(rows)
-            except sqlite3.Error as e:
-                logger.error("Audit log insert error: %s", e)
+            except sqlite3.Error as err:
+                logger.error("Audit log insert error: %s", err)
 
         self.conn.commit()
         logger.info("Inserted %d audit log entries", total)
@@ -429,20 +443,28 @@ class SQLExporter:
                 status = action_to_status.get(action, "PENDING_REVIEW")
                 confidence = 0.95 if action == "AUTO_CORRECT" else 0.5
 
+                rn = e.row_number
+                if rn is not None:
+                    if isinstance(rn, (tuple, list)):
+                        rn = rn[0] if rn else None
+                    try:
+                        rn = int(rn) if rn is not None else None
+                    except (ValueError, TypeError):
+                        rn = None
                 rows.append((
                     e.case_id, e.table_name, e.column_name,
                     e.original_value, e.cleaned_value,
                     e.corrected_by or "auto",
                     problem_type, e.error_type, action,
                     confidence, None, None, status,
-                    e.source_file, e.row_number,
+                    e.source_file, rn,
                 ))
 
             try:
                 self.conn.executemany(sql, rows)
                 total += len(rows)
-            except sqlite3.Error as e:
-                logger.error("Data passport insert error: %s", e)
+            except sqlite3.Error as err:
+                logger.error("Data passport insert error: %s", err)
 
         self.conn.commit()
         logger.info("Inserted %d data passport entries", total)

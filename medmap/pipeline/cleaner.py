@@ -162,6 +162,9 @@ class DataCleaner:
         for col in date_cols:
             if col not in df.columns:
                 continue
+            # Convert column to object dtype to avoid FutureWarning
+            # when inserting string dates into numeric columns
+            df[col] = df[col].astype(object)
             for idx in df.index:
                 val = df.at[idx, col]
                 if pd.isna(val) if isinstance(val, float) else val is None:
@@ -185,7 +188,7 @@ class DataCleaner:
                         s, None,
                         "INVALID_DATE", Severity.HIGH, ActionTaken.QUARANTINE,
                     )
-                    df.at[idx, col] = np.nan
+                    df.at[idx, col] = None
         return df
 
     def _try_parse_date(self, val: str) -> Optional[datetime]:
