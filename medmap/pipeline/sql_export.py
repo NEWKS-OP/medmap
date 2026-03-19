@@ -293,23 +293,14 @@ class SQLExporter:
         sql = f"INSERT{ignore} INTO {table_name} ({col_names}) VALUES ({placeholders})"
 
         # Convert DataFrame to list of tuples (vectorized for performance)
-        # Pre-process columns: replace NaN with None, convert numpy types
+        # Convert numpy types and NaN to Python-native types for sqlite3
         insert_df = df[matched_cols].copy()
-        for col in insert_df.columns:
-            insert_df[col] = insert_df[col].where(insert_df[col].notna(), None)
 
         total_inserted = 0
         for start in range(0, len(insert_df), chunk_size):
             chunk = insert_df.iloc[start:start + chunk_size]
             rows = [
-                tuple(
-                    None if v is None or (isinstance(v, float) and np.isnan(v))
-                    else int(v) if isinstance(v, (np.integer,))
-                    else float(v) if isinstance(v, (np.floating,))
-                    else v if isinstance(v, (int, float))
-                    else str(v)
-                    for v in record
-                )
+                tuple(self._to_sqlite_value(v) for v in record)
                 for record in chunk.itertuples(index=False, name=None)
             ]
 
@@ -359,6 +350,19 @@ class SQLExporter:
     # ──────────────────────────────────────────────
     # HELPERS
     # ──────────────────────────────────────────────
+
+    @staticmethod
+    def _to_sqlite_value(v):
+        """Convert a single value to a sqlite3-compatible Python type."""
+        if v is None or (isinstance(v, float) and np.isnan(v)):
+            return None
+        if isinstance(v, (np.integer,)):
+            return int(v)
+        if isinstance(v, (np.floating,)):
+            return float(v)
+        if isinstance(v, (int, float)):
+            return v
+        return str(v)
 
     @staticmethod
     def _normalize_row_number(rn) -> Optional[int]:

@@ -56,23 +56,25 @@ async def apply_correction(body: dict = Body(default={})) -> dict:
             "SELECT * FROM tbAuditLog WHERE coId = ?", (audit_log_id,)
         ).fetchone()
 
-        previous_value = None
-        if audit_entry:
-            previous_value = audit_entry["cleaned_value"] or audit_entry["original_value"]
+        if not audit_entry:
+            return {"success": False, "audit_log_id": audit_log_id, "previous_value": None, "new_value": None, "action": action, "error": "Audit log entry not found"}
 
-            db.execute(
-                """UPDATE tbAuditLog
-                   SET cleaned_value = ?, action_taken = ?, corrected_by = ?, correction_timestamp = ?
-                   WHERE coId = ?""",
-                (new_value, action, corrected_by, datetime.now().isoformat(), audit_log_id),
-            )
+        previous_value = audit_entry["cleaned_value"] or audit_entry["original_value"]
+
+        now = datetime.now().isoformat()
+        db.execute(
+            """UPDATE tbAuditLog
+               SET cleaned_value = ?, action_taken = ?, corrected_by = ?, correction_timestamp = ?
+               WHERE coId = ?""",
+            (new_value, action, corrected_by, now, audit_log_id),
+        )
 
         # Update passport status if exists
         db.execute(
             """UPDATE tbDataPassport
                SET status = 'CLEAN', cleaned_value = ?, validated_by = ?, updated_at = ?
                WHERE case_id = ? AND field_name = ? AND status != 'CLEAN'""",
-            (new_value, corrected_by, datetime.now().isoformat(), case_id, column_name),
+            (new_value, corrected_by, now, case_id, column_name),
         )
 
         db.commit()

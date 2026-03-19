@@ -5,6 +5,7 @@ PATCH /api/alerts/{case_id}/{rule_name}
 """
 
 import logging
+import threading
 from datetime import datetime
 from fastapi import APIRouter, Query, Body
 
@@ -18,6 +19,7 @@ router = APIRouter(responses={200: {"description": "Alerts data"}})
 
 # In-memory alert store (populated from audit log on first access, cached)
 _alerts_cache: Optional[list[dict]] = None
+_alerts_lock = threading.Lock()
 
 
 def _build_sbar(cid: str, entries: list, sources: list, error_types: set) -> dict:
@@ -89,15 +91,17 @@ def _build_alerts(db: object) -> list[dict]:
 
 def _get_alerts(db: object) -> list[dict]:
     global _alerts_cache
-    if _alerts_cache is None:
-        _alerts_cache = _build_alerts(db)
-    return _alerts_cache
+    with _alerts_lock:
+        if _alerts_cache is None:
+            _alerts_cache = _build_alerts(db)
+        return _alerts_cache
 
 
 def invalidate_alerts_cache():
     """Reset alerts cache so next access rebuilds from DB."""
     global _alerts_cache
-    _alerts_cache = None
+    with _alerts_lock:
+        _alerts_cache = None
 
 
 @router.get("")

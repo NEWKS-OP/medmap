@@ -209,6 +209,9 @@ class DataMapper:
                 result["coCaseId"] = result["coPatient_id"]
 
         result = self._convert_case_id_column(result)
+        # Resolve missing coCaseId via patient_id lookup
+        if hasattr(self, '_pid_lookup'):
+            result = self._resolve_case_ids(result, self._pid_lookup)
         result = self._to_string_columns(result, exclude={"coCaseId"})
 
         logger.info("Mapped tbImportDeviceMotionData: %d rows, %d columns",
@@ -233,6 +236,9 @@ class DataMapper:
                 result["coCaseId"] = result["coPatient_id"]
 
         result = self._convert_case_id_column(result)
+        # Resolve missing coCaseId via patient_id lookup
+        if hasattr(self, '_pid_lookup'):
+            result = self._resolve_case_ids(result, self._pid_lookup)
         result = self._to_string_columns(result, exclude={"coCaseId"})
 
         logger.info("Mapped tbImportDevice1HzMotionData: %d rows, %d columns",
@@ -264,6 +270,9 @@ class DataMapper:
                 result["coCaseId"] = result["coEncounter_id"]
 
         result = self._convert_case_id_column(result)
+        # Resolve missing coCaseId via patient_id lookup
+        if hasattr(self, '_pid_lookup'):
+            result = self._resolve_case_ids(result, self._pid_lookup)
         result = self._to_string_columns(result, exclude={"coCaseId"})
 
         logger.info("Mapped tbImportMedicationInpatientData: %d rows, %d columns",
@@ -292,12 +301,22 @@ class DataMapper:
                 result["coCaseId"] = result["coPatient_id"]
 
         result = self._convert_case_id_column(result)
+        # Resolve missing coCaseId via patient_id lookup
+        if hasattr(self, '_pid_lookup'):
+            result = self._resolve_case_ids(result, self._pid_lookup)
 
         # Truncate nursing notes to 256 chars (nvarchar(256) in schema)
         if "coNursing_note_free_text" in result.columns:
-            result["coNursing_note_free_text"] = result["coNursing_note_free_text"].apply(
-                lambda v: str(v)[:256] if v is not None and not (isinstance(v, float) and np.isnan(v)) else None
-            )
+            def _truncate(v):
+                if v is None:
+                    return None
+                try:
+                    if pd.isna(v):
+                        return None
+                except (TypeError, ValueError):
+                    pass
+                return str(v)[:256]
+            result["coNursing_note_free_text"] = result["coNursing_note_free_text"].apply(_truncate)
 
         result = self._to_string_columns(result, exclude={"coCaseId"})
 
@@ -714,6 +733,33 @@ class DataMapper:
     # ORCHESTRATOR
     # ──────────────────────────────────────────────
 
+    def _build_pid_to_caseid_lookup(self, dataframes: dict[str, pd.DataFrame]) -> dict:
+        """Build patient_id -> case_id lookup from sources that have both."""
+        lookup = {}
+        for fname, df in dataframes.items():
+            if "case_id" in df.columns and "patient_id" in df.columns:
+                for idx in df.index:
+                    case_id = self._get_val(df, idx, "case_id")
+                    pid = self._get_val(df, idx, "patient_id")
+                    if case_id and pid and pid not in lookup:
+                        lookup[pid] = case_id
+        return lookup
+
+    def _resolve_case_ids(self, result: pd.DataFrame,
+                          pid_lookup: dict) -> pd.DataFrame:
+        """For rows with patient_id but no valid case_id, look up case_id."""
+        if "coCaseId" not in result.columns or "coPatient_id" not in result.columns:
+            return result
+        if not pid_lookup:
+            return result
+        for idx in result.index:
+            if pd.isna(result.at[idx, "coCaseId"]) or result.at[idx, "coCaseId"] is None:
+                pid = result.at[idx, "coPatient_id"]
+                if pid and pid in pid_lookup:
+                    numeric = self._extract_case_id_numeric(pid_lookup[pid])
+                    result.at[idx, "coCaseId"] = numeric
+        return result
+
     def map_all(self, dataframes: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
         """
         Map all cleaned DataFrames to the 7 target SQL tables.
@@ -721,6 +767,9 @@ class DataMapper:
         """
         by_type = self._group_by_type(dataframes)
         self.mapping_warnings = []
+
+        # Build patient_id -> case_id lookup for FK resolution
+        self._pid_lookup = self._build_pid_to_caseid_lookup(dataframes)
 
         # 1. tbCaseData (assembled from multiple sources)
         self.mapped_tables["tbCaseData"] = self.build_case_data(dataframes)

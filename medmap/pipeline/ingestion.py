@@ -264,6 +264,7 @@ class DataIngester:
 
         warnings = []
         rows = []
+        header = None
 
         try:
             with pdfplumber.open(filepath) as pdf:
@@ -273,8 +274,8 @@ class DataIngester:
                         for table in tables:
                             if not table:
                                 continue
-                            # First table on first page: use row 0 as header
-                            if page_num == 0 and not rows:
+                            # Use first encountered table's row 0 as header
+                            if header is None:
                                 header = [
                                     str(c).strip() if c else f"col_{i}"
                                     for i, c in enumerate(table[0])
