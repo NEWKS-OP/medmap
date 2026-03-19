@@ -160,18 +160,19 @@ async def get_patient_labs(case_id: str) -> list[dict]:
             return []
 
         lab_row = labs[0]
-        return [
-            {
+        lab_keys = lab_row.keys()
+        results = []
+        for name, val_col, flag_col, low_col, high_col in LAB_PARAMS:
+            results.append({
                 "parameter_name": name,
-                "value": lab_row[val_col],
-                "flag": lab_row[flag_col],
-                "ref_low": lab_row[low_col],
-                "ref_high": lab_row[high_col],
+                "value": lab_row[val_col] if val_col in lab_keys else None,
+                "flag": lab_row[flag_col] if flag_col in lab_keys else None,
+                "ref_low": lab_row[low_col] if low_col in lab_keys else None,
+                "ref_high": lab_row[high_col] if high_col in lab_keys else None,
                 "original_value": None,
                 "was_corrected": False,
-            }
-            for name, val_col, flag_col, low_col, high_col in LAB_PARAMS
-        ]
+            })
+        return results
     except Exception as e:
         logger.error("get_patient_labs error: %s", e)
         return []
@@ -211,13 +212,14 @@ async def get_patient_timeline(case_id: str) -> list[dict]:
                 "source_file": None, "alert_message": None,
             })
 
-        # Medications (limit 200)
+        # Medications (limit 200) — prefer event-specific timestamps
         for r in db.execute(
-            "SELECT coAdmission_datetime, coMedication_name, coDose, coRoute, administration_status, coRecord_type FROM tbImportMedicationInpatientData WHERE coCaseId = ? LIMIT 200",
+            "SELECT coOrder_start_datetime, administration_datetime, coMedication_name, coDose, coRoute, administration_status, coRecord_type FROM tbImportMedicationInpatientData WHERE coCaseId = ? LIMIT 200",
             (cid,),
         ).fetchall():
+            ts = r["administration_datetime"] or r["coOrder_start_datetime"] or ""
             events.append({
-                "event_type": "MEDICATION", "timestamp": r["coAdmission_datetime"] or "",
+                "event_type": "MEDICATION", "timestamp": ts,
                 "data": {"name": r["coMedication_name"], "dose": r["coDose"], "route": r["coRoute"], "status": r["administration_status"], "event_type": r["coRecord_type"]},
                 "source_file": None, "alert_message": None,
             })

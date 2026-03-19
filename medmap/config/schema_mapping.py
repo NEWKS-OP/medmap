@@ -347,7 +347,7 @@ NURSING_MAPPING = {
     "report_date": "coReport_date",
     "shift": "coShift",
     "nursing_note_free_text": "coNursing_note_free_text",
-    "note_text": "coNursing_note_free_text",
+    # note_text handled by pre-rename in map_nursing() to avoid duplicate columns
 }
 
 CASE_DATA_MAPPING = {

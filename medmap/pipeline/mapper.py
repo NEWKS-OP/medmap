@@ -93,6 +93,8 @@ class DataMapper:
                 rename_map[src_col] = tgt_col
 
         df = df.rename(columns=rename_map)
+        # Drop any duplicate columns created by rename
+        df = df.loc[:, ~df.columns.duplicated()]
 
         # Keep only target columns that exist after rename
         target_cols = set(mapping.values())
@@ -501,6 +503,12 @@ class DataMapper:
         for src, tgt in german_to_target.items():
             if src in df.columns and tgt not in col_map:
                 col_map[tgt] = df[src].values
+
+        # Map patient_id
+        for col in ["patient_id", "PID", "PATFOE"]:
+            if col in df.columns and "coPatientId" not in col_map:
+                col_map["coPatientId"] = df[col].values
+                break
 
         # Add coCaseIdAlpha for string case_id
         for col in ["case_id", "FallID", "PATFAL"]:

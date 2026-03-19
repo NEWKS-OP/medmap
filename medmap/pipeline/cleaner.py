@@ -154,11 +154,11 @@ class DataCleaner:
         if isinstance(val, float) and np.isnan(val):
             return False
         raw = str(val)
-        # Whitespace-only strings are missing
-        if raw.strip() == "" and raw != "":
+        # Empty strings and whitespace-only strings are missing
+        if raw.strip() == "":
             return True
         s = raw.strip().lower()
-        return s in MISSING_VALUE_TOKENS and s != ""
+        return s in MISSING_VALUE_TOKENS
 
     # ──────────────────────────────────────────────
     # 2.3 DATE NORMALIZATION
