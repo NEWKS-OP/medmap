@@ -23,7 +23,10 @@ router = APIRouter(responses={200: {"description": "Patient data"}})
 
 
 def _find_case(db: object, case_id: str):
-    """Find a case by coCaseIdAlpha or coId."""
+    """Find a case by coCaseIdAlpha or coId.
+
+    Returns the first matching sqlite3.Row or None.
+    """
     return db.execute(
         "SELECT * FROM tbCaseData WHERE coCaseIdAlpha = ? OR CAST(coId AS TEXT) = ? LIMIT 1",
         (case_id, case_id),
@@ -374,6 +377,7 @@ async def get_patient_convergence(case_id: str) -> dict:
 
         total = labs_score + motion_score + medication_score + nursing_score + assessment_score
 
+        # Risk thresholds: 76+=CRITICAL, 51+=HIGH, 26+=MODERATE, else LOW
         if total >= 76:
             risk = "CRITICAL"
         elif total >= 51:

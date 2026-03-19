@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(responses={200: {"description": "Query results"}})
 
 # Simple keyword-to-SQL patterns for offline fallback
+# Format: (keywords_list, sql_query)
 SQL_PATTERNS = [
     (["fall", "chute", "sturz"], "SELECT d.coCaseId, c.coCaseIdAlpha, d.coTimestamp, d.coFall_event_0_1, d.coImpact_magnitude_g, d.coPost_fall_immobility_minutes FROM tbImportDeviceMotionData d LEFT JOIN tbCaseData c ON c.coId = d.coCaseId WHERE d.coFall_event_0_1 = '1' LIMIT 50"),
     (["medication", "medic", "drug"], "SELECT m.coCaseId, c.coCaseIdAlpha, m.coMedication_name, m.coDose, m.coFrequency, m.administration_status FROM tbImportMedicationInpatientData m LEFT JOIN tbCaseData c ON c.coId = m.coCaseId LIMIT 50"),
@@ -37,7 +38,10 @@ DEFAULT_SQL = (
 
 
 def _question_to_sql(question: str) -> str:
-    """Simple keyword matching to generate SQL. Offline fallback."""
+    """Match question keywords to predefined SQL queries.
+
+    Offline fallback when no LLM API key is available.
+    """
     q_lower = question.lower()
     for keywords, sql in SQL_PATTERNS:
         if any(kw in q_lower for kw in keywords):

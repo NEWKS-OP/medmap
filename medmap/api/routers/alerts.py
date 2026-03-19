@@ -21,7 +21,10 @@ _alerts_cache: list[dict] | None = None
 
 
 def _build_alerts(db: object) -> list[dict]:
-    """Build clinical alerts from cross-source audit log entries."""
+    """Build clinical alerts from cross-source audit log entries.
+
+    Groups CRITICAL audit entries by case_id and generates alerts.
+    """
     alerts = []
 
     # Get critical audit entries grouped by case
@@ -72,7 +75,7 @@ def _build_alerts(db: object) -> list[dict]:
     return alerts
 
 
-def _get_alerts(db) -> list[dict]:
+def _get_alerts(db: object) -> list[dict]:
     global _alerts_cache
     if _alerts_cache is None:
         _alerts_cache = _build_alerts(db)

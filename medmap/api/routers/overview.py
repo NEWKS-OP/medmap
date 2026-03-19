@@ -51,6 +51,7 @@ async def get_quality_scores() -> list[dict]:
             ).fetchall()
             errors_by_cat = {c["error_type"]: c["cnt"] for c in cats}
 
+            # Score: 100 = perfect, decreases with more errors
             score = max(0, 100 - min(100, int(total_errors * 0.01)))
 
             scores.append({
@@ -101,6 +102,7 @@ async def get_ward_scores() -> list[dict]:
                     case_id_list,
                 ).fetchone()["cnt"]
 
+            # Ward score: based on errors per patient ratio
             score = max(0, 100 - min(100, int(nb_errors / max(1, nb_patients) * 0.5)))
 
             results.append({
