@@ -122,15 +122,21 @@ class DataMapper:
         return df
 
     def _extract_case_id_numeric(self, val) -> Optional[int]:
-        """Extract numeric part from case_id (e.g., 'CASE-0042' -> 42)."""
+        """Extract numeric part from case_id.
+
+        Handles compound formats like 'CASE-0135-01' -> 13501
+        and simple formats like 'CASE-0042' -> 42.
+        """
         if self._safe_isna(val):
             return None
         s = str(val).strip()
-        # Extract digits from CASE-XXXX format
-        m = re.search(r'(\d+)', s)
-        if m:
+        # Extract all digit groups and concatenate them
+        # e.g., "CASE-0135-01" -> "013501" -> 13501
+        # e.g., "CASE-0042" -> "0042" -> 42
+        digits = re.findall(r'\d+', s)
+        if digits:
             try:
-                return int(m.group(1))
+                return int("".join(digits))
             except ValueError:
                 return None
         return None
@@ -150,6 +156,9 @@ class DataMapper:
         def _to_str(v):
             if DataMapper._safe_isna(v):
                 return None
+            # Convert float X.0 to integer string to preserve 0/1 binary values
+            if isinstance(v, float) and v == int(v):
+                return str(int(v))
             return str(v)
         for col in df.columns:
             if col in exclude:

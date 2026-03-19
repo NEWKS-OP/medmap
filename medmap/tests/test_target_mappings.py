@@ -50,9 +50,10 @@ class TestICD10Mapping:
     def test_primary_icd10_maps(self):
         assert ICD10_MAPPING["primary_icd10_code"] == "coPrimary_icd10_code"
 
-    def test_all_targets_start_with_co(self):
-        for src, tgt in ICD10_MAPPING.items():
-            assert tgt.startswith("co"), f"{src} -> {tgt} doesn't start with 'co'"
+    def test_targets_match_official_schema(self):
+        # epaCC schema has cp prefix typo and missing co prefix on 2 columns
+        assert ICD10_MAPPING["secondary_icd10_descriptions_en"] == "cpSecondary_icd10_descriptions_en"
+        assert ICD10_MAPPING["ops_descriptions_en"] == "ops_descriptions_en"
 
 
 class TestDeviceMotionMapping:
