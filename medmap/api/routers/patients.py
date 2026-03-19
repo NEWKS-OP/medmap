@@ -16,6 +16,7 @@ from datetime import datetime
 from fastapi import APIRouter, Query
 
 from api.dependencies import get_db, rows_to_dicts
+from pipeline.nlp import analyze_note, normalize_shift
 
 logger = logging.getLogger(__name__)
 

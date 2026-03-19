@@ -13,6 +13,8 @@ import logging
 import re
 from typing import Optional
 
+import pandas as pd
+
 logger = logging.getLogger(__name__)
 
 # ─── Pain level patterns ───────────────────────────────────────────
@@ -295,3 +297,183 @@ def analyze_note(text: str) -> dict:
         "deterioration_flag": det_flag,
         "deterioration_signs": det_signs,
     }
+
+
+# ─── NursingNLPAnalyzer class ─────────────────────────────────────
+
+class NursingNLPAnalyzer:
+    """Batch NLP analyzer for nursing daily reports.
+
+    Uses regex-based extraction (spaCy loaded optionally for future
+    entity-based enhancements). Processes DataFrames with nursing notes
+    and returns NursingNLPResult objects.
+    """
+
+    def __init__(self, model_name: str = "en_core_web_sm"):
+        self.model_name = model_name
+        self._nlp = None
+        self._load_spacy(model_name)
+
+    def _load_spacy(self, model_name: str) -> None:
+        """Try to load spaCy model. Non-fatal if unavailable."""
+        try:
+            import spacy
+            self._nlp = spacy.load(model_name)
+            logger.info("spaCy model '%s' loaded", model_name)
+        except (ImportError, OSError) as e:
+            logger.warning("spaCy model '%s' not available: %s. Using regex-only mode.", model_name, e)
+            self._nlp = None
+
+    def analyze_dataframe(self, df: pd.DataFrame) -> list[dict]:
+        """Analyze all nursing notes in a DataFrame.
+
+        Expects columns: CaseID (or coCaseId), Shift (or coShift),
+        ReportDate (or coReport_date), NursingNote (or coNursing_note_free_text).
+
+        Returns list of NursingNLPResult-compatible dicts.
+        """
+        if df is None or df.empty:
+            return []
+
+        # Detect column names (dirty vs mapped)
+        col_map = self._detect_columns(df)
+        if not col_map:
+            logger.warning("Cannot detect nursing columns in DataFrame with cols: %s", list(df.columns))
+            return []
+
+        results = []
+        for _, row in df.iterrows():
+            case_id = str(row.get(col_map["case_id"], "") or "")
+            shift_raw = str(row.get(col_map["shift"], "") or "")
+            report_date = str(row.get(col_map["report_date"], "") or "")
+            note = str(row.get(col_map["note"], "") or "")
+
+            if not note or note.lower() in ("nan", "none", ""):
+                continue
+
+            nlp_result = analyze_note(note)
+            nlp_result["case_id"] = case_id
+            nlp_result["shift"] = normalize_shift(shift_raw)
+            nlp_result["report_date"] = report_date
+            results.append(nlp_result)
+
+        logger.info("NLP analyzed %d nursing notes, %d had findings",
+                     len(results),
+                     sum(1 for r in results if r["pain_level"] is not None
+                         or r["mobility_status"] is not None
+                         or r["wound_grade"] is not None
+                         or r["deterioration_flag"]))
+        return results
+
+    @staticmethod
+    def _detect_columns(df: pd.DataFrame) -> Optional[dict[str, str]]:
+        """Detect column names for nursing data across naming conventions."""
+        cols = {c.lower(): c for c in df.columns}
+
+        # Case ID
+        case_id_col = None
+        for candidate in ["caseid", "case_id", "cocaseid"]:
+            if candidate in cols:
+                case_id_col = cols[candidate]
+                break
+        if not case_id_col:
+            return None
+
+        # Shift
+        shift_col = None
+        for candidate in ["shift", "coshift"]:
+            if candidate in cols:
+                shift_col = cols[candidate]
+                break
+
+        # Report date
+        date_col = None
+        for candidate in ["reportdate", "report_date", "coreport_date"]:
+            if candidate in cols:
+                date_col = cols[candidate]
+                break
+
+        # Note text
+        note_col = None
+        for candidate in ["nursingnote", "nursing_note", "conursing_note_free_text", "note", "notes"]:
+            if candidate in cols:
+                note_col = cols[candidate]
+                break
+        if not note_col:
+            return None
+
+        return {
+            "case_id": case_id_col,
+            "shift": shift_col or case_id_col,  # fallback: won't crash
+            "report_date": date_col or case_id_col,
+            "note": note_col,
+        }
+
+    def analyze_all(self, dataframes: dict[str, pd.DataFrame]) -> dict[str, list[dict]]:
+        """Analyze all nursing DataFrames from the pipeline.
+
+        Args:
+            dataframes: {filename: DataFrame} from ingestion.
+
+        Returns:
+            {case_id: [NursingNLPResult-dict, ...]} grouped by patient.
+        """
+        all_results: list[dict] = []
+        for fname, df in dataframes.items():
+            if not self._is_nursing_data(fname, df):
+                continue
+            results = self.analyze_dataframe(df)
+            all_results.extend(results)
+            logger.info("NLP: processed %s → %d results", fname, len(results))
+
+        # Group by case_id
+        grouped: dict[str, list[dict]] = {}
+        for r in all_results:
+            cid = r["case_id"]
+            grouped.setdefault(cid, []).append(r)
+
+        logger.info("NLP: %d total results for %d patients", len(all_results), len(grouped))
+        return grouped
+
+    @staticmethod
+    def _is_nursing_data(filename: str, df: pd.DataFrame) -> bool:
+        """Check if a DataFrame contains nursing data."""
+        fname_lower = filename.lower()
+        if "nursing" in fname_lower:
+            return True
+        # Check columns
+        cols_lower = {c.lower() for c in df.columns}
+        return "nursingnote" in cols_lower or "conursing_note_free_text" in cols_lower
+
+    def get_summary_stats(self, grouped_results: dict[str, list[dict]]) -> dict:
+        """Get summary statistics from NLP results."""
+        total_notes = sum(len(v) for v in grouped_results.values())
+        pain_found = sum(
+            1 for notes in grouped_results.values()
+            for n in notes if n["pain_level"] is not None
+        )
+        mobility_found = sum(
+            1 for notes in grouped_results.values()
+            for n in notes if n["mobility_status"] is not None
+        )
+        wound_found = sum(
+            1 for notes in grouped_results.values()
+            for n in notes if n["wound_grade"] is not None
+        )
+        deterioration_found = sum(
+            1 for notes in grouped_results.values()
+            for n in notes if n["deterioration_flag"]
+        )
+
+        return {
+            "total_notes_analyzed": total_notes,
+            "total_patients": len(grouped_results),
+            "pain_extracted": pain_found,
+            "mobility_extracted": mobility_found,
+            "wound_extracted": wound_found,
+            "deterioration_flagged": deterioration_found,
+            "extraction_rate": round(
+                (pain_found + mobility_found + wound_found + deterioration_found)
+                / max(total_notes * 4, 1) * 100, 1
+            ),
+        }
