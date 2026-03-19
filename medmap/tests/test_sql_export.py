@@ -479,3 +479,13 @@ class TestTsqlConversionEdgeCases:
             "CREATE TABLE t (id int);\nGO\n"
         )
         assert "GO" not in result or "go" not in result.lower().split()
+
+
+class TestSQLExporterInit:
+    def test_default_db_path(self):
+        e = SQLExporter(db_path="/tmp/test_init.db")
+        assert e.db_path == "/tmp/test_init.db"
+
+    def test_conn_is_none_before_connect(self):
+        e = SQLExporter(db_path="/tmp/test_init2.db")
+        assert e.conn is None

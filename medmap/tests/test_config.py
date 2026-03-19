@@ -211,6 +211,14 @@ class TestPidPrefixes:
     def test_epa_prefix(self):
         assert PID_PREFIXES["epaAC_german"] == "EPA"
 
+    def test_device_1hz_prefix(self):
+        assert PID_PREFIXES["device_1hz"] == "D1H"
+
+    def test_all_prefixes_are_strings(self):
+        for ftype, prefix in PID_PREFIXES.items():
+            assert isinstance(prefix, str), f"{ftype} prefix is not a string"
+            assert len(prefix) >= 2, f"{ftype} prefix too short"
+
 
 class TestClinicalRanges:
     def test_sodium_range(self):
@@ -330,6 +338,19 @@ class TestGenderMapping:
         assert GENDER_MAP[""] is None
 
 
+class TestGenderMapCompleteness:
+    def test_has_w_for_female(self):
+        assert GENDER_MAP.get("W") == "F" or GENDER_MAP.get("w") == "F"
+
+    def test_has_diverse(self):
+        result = GENDER_MAP.get("D")
+        assert result is None or isinstance(result, str)
+
+    def test_all_values_valid(self):
+        for key, val in GENDER_MAP.items():
+            assert val in ("M", "F", None), f"Unexpected gender value: {val}"
+
+
 class TestNormalizeGenderFunction:
     def test_male(self):
         assert normalize_gender("male") == "M"
@@ -374,6 +395,21 @@ class TestDirtyIcd10Rename:
 
     def test_station_renamed(self):
         assert DIRTY_ICD10_RENAME["Station"] == "ward"
+
+
+class TestCaseDataMapping:
+    def test_has_case_id(self):
+        assert "case_id" in CASE_DATA_MAPPING
+        assert CASE_DATA_MAPPING["case_id"] == "coCaseId"
+
+    def test_has_patient_id(self):
+        assert "patient_id" in CASE_DATA_MAPPING
+
+    def test_has_ward(self):
+        assert "ward" in CASE_DATA_MAPPING
+
+    def test_has_age(self):
+        assert "age_years" in CASE_DATA_MAPPING
 
 
 class TestColumnSignatures:

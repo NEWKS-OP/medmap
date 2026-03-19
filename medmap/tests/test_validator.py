@@ -597,6 +597,23 @@ class TestValidatorClinicalRangesExtended:
         assert len(outliers) == 0
 
 
+class TestValidatorMissingValues:
+    def test_detects_null_token(self):
+        v = DataValidator()
+        df = make_labs_df({"sodium_mmol_L": ["null"]})
+        v.validate_dataframe(df, "test.csv")
+        log = v.get_audit_log()
+        missing = [e for e in log if "MISSING" in e.error_type.upper()]
+        assert len(missing) >= 1
+
+    def test_detects_na_token(self):
+        v = DataValidator()
+        df = make_labs_df({"sodium_mmol_L": ["N/A"]})
+        v.validate_dataframe(df, "test.csv")
+        log = v.get_audit_log()
+        assert len(log) >= 1
+
+
 class TestValidatorDuplicateDetection:
     def test_detects_exact_duplicates(self):
         v = DataValidator()

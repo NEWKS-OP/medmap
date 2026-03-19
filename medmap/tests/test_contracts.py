@@ -278,6 +278,30 @@ class TestPipelineStats:
         assert s.ward_scores == {}
 
 
+class TestPipelineProgressEdgeCases:
+    def test_step_detail(self):
+        p = PipelineProgress(
+            status=PipelineStatus.RUNNING,
+            current_step="Validating",
+            step_number=2,
+            total_steps=5,
+            progress_pct=0.4,
+            step_detail="Processing labs.csv",
+        )
+        assert p.step_detail == "Processing labs.csv"
+
+    def test_completed_status(self):
+        p = PipelineProgress(
+            status=PipelineStatus.COMPLETED,
+            current_step="Done",
+            step_number=5,
+            total_steps=5,
+            progress_pct=1.0,
+        )
+        assert p.progress_pct == 1.0
+        assert p.status == PipelineStatus.COMPLETED
+
+
 class TestROIInputsOutputs:
     def test_roi_inputs_defaults(self):
         r = ROIInputs()
@@ -288,6 +312,55 @@ class TestROIInputsOutputs:
         r = ROIOutputs()
         assert r.cases_total == 0
         assert r.savings_per_year == 0
+
+    def test_roi_inputs_custom(self):
+        r = ROIInputs(nb_institutions=500, nb_cases_per_year=1000)
+        assert r.nb_institutions == 500
+        assert r.nb_cases_per_year == 1000
+
+    def test_roi_outputs_custom(self):
+        r = ROIOutputs(cases_total=100, prevented=15, savings_per_year=60000)
+        assert r.prevented == 15
+        assert r.savings_per_year == 60000
+
+    def test_roi_inputs_prevention_rate(self):
+        r = ROIInputs()
+        assert r.prevention_rate == 0.15
+
+    def test_roi_outputs_time_saved(self):
+        r = ROIOutputs(time_saved_hours=500)
+        assert r.time_saved_hours == 500
+
+
+class TestPipelineStatsEdgeCases:
+    def test_with_critical_alerts(self):
+        alert = ClinicalAlert(
+            case_id="C", rule_name="AKI", severity=Severity.CRITICAL,
+            message="m", sources_involved=[], triggered_values={},
+        )
+        s = PipelineStats(
+            sources_processed=1, total_rows=100, rows_imported=95,
+            rows_quarantined=5, errors_by_category={}, errors_by_dataset={},
+            critical_alerts=[alert],
+        )
+        assert len(s.critical_alerts) == 1
+
+    def test_with_ward_scores(self):
+        ws = WardScore(ward_name="ICU", score=90, nb_patients=20, nb_errors=2, rank=1)
+        s = PipelineStats(
+            sources_processed=1, total_rows=100, rows_imported=100,
+            rows_quarantined=0, errors_by_category={}, errors_by_dataset={},
+            ward_scores={"ICU": ws},
+        )
+        assert "ICU" in s.ward_scores
+
+    def test_with_processing_time(self):
+        s = PipelineStats(
+            sources_processed=1, total_rows=100, rows_imported=100,
+            rows_quarantined=0, errors_by_category={}, errors_by_dataset={},
+            processing_time_seconds=45.5,
+        )
+        assert s.processing_time_seconds == 45.5
 
 
 class TestInitSessionState:
@@ -347,6 +420,33 @@ class TestSessionKeys:
 
     def test_has_selected_case(self):
         assert "selected_case" in SESSION_KEYS
+
+    def test_has_agent_stats(self):
+        assert "agent_stats" in SESSION_KEYS
+
+    def test_has_column_mappings(self):
+        assert "column_mappings" in SESSION_KEYS
+
+    def test_has_nlp_results(self):
+        assert "nlp_results" in SESSION_KEYS
+
+    def test_has_convergence_scores(self):
+        assert "convergence_scores" in SESSION_KEYS
+
+    def test_has_chat_history(self):
+        assert "chat_history" in SESSION_KEYS
+
+    def test_has_pending_corrections(self):
+        assert "pending_corrections" in SESSION_KEYS
+
+    def test_has_correction_history(self):
+        assert "correction_history" in SESSION_KEYS
+
+    def test_has_ingestion_results(self):
+        assert "ingestion_results" in SESSION_KEYS
+
+    def test_has_db_path(self):
+        assert "db_path" in SESSION_KEYS
 
 
 class TestColumnMapping:

@@ -771,3 +771,24 @@ class TestMapperInit:
     def test_mapped_tables_empty(self):
         m = DataMapper()
         assert len(m.mapped_tables) == 0
+
+
+class TestMapperGetVal:
+    def test_gets_existing_value(self, mapper):
+        row = pd.Series({"col_a": "hello"})
+        assert mapper._get_val(row, "col_a") == "hello"
+
+    def test_returns_none_for_missing(self, mapper):
+        row = pd.Series({"col_a": "hello"})
+        result = mapper._get_val(row, "col_b")
+        assert result is None
+
+    def test_returns_none_for_nan(self, mapper):
+        row = pd.Series({"col_a": float("nan")})
+        result = mapper._get_val(row, "col_a")
+        assert result is None
+
+    def test_returns_none_for_nat(self, mapper):
+        row = pd.Series({"col_a": pd.NaT})
+        result = mapper._get_val(row, "col_a")
+        assert result is None

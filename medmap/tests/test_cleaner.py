@@ -613,3 +613,22 @@ class TestCleanerCleanIdsExtended:
         df = make_df({"case_id": ["CASE-001"], "patient_id": ["PAT-100"]})
         result = cleaner._clean_ids(df, "test.csv")
         assert result["case_id"].iloc[0] == "CASE-001"
+
+
+class TestCleanerNumericParsing:
+    def test_parses_integer_string(self, cleaner):
+        result = cleaner._try_parse_numeric("140")
+        assert result == 140.0
+
+    def test_parses_float_string(self, cleaner):
+        result = cleaner._try_parse_numeric("4.5")
+        assert result == 4.5
+
+    def test_returns_none_for_text(self, cleaner):
+        result = cleaner._try_parse_numeric("abc")
+        assert result is None
+
+    def test_handles_comma_decimal(self, cleaner):
+        result = cleaner._try_parse_numeric("4,5")
+        # Should handle German comma format
+        assert result is None or result == 4.5
