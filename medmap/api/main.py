@@ -32,13 +32,13 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="MEDMAP API",
     version="1.0.0",
-    description="Smart Health Data Mapping API — 25 endpoints for medical data pipeline",
+    description="Smart Health Data Mapping API — 25 endpoints for medical data pipeline, 9 routers",
     lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -56,7 +56,7 @@ app.include_router(corrections.router, prefix="/api/corrections", tags=["correct
 
 @app.get("/")
 async def root():
-    return {"name": "MEDMAP API", "version": "1.0.0", "status": "running"}
+    return {"name": "MEDMAP API", "version": "1.0.0", "status": "running", "endpoints": 25}
 
 
 @app.get("/health")
@@ -65,6 +65,6 @@ async def health():
         from api.dependencies import get_db
         db = get_db()
         count = db.execute("SELECT COUNT(*) as cnt FROM tbCaseData").fetchone()["cnt"]
-        return {"status": "ok", "db_connected": True, "cases_count": count}
+        return {"status": "ok", "db_connected": True, "cases_count": count, "api_version": "1.0.0"}
     except Exception as e:
-        return {"status": "degraded", "db_connected": False, "error": str(e)}
+        return {"status": "degraded", "db_connected": False, "error": str(e), "api_version": "1.0.0"}

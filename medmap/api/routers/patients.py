@@ -18,7 +18,7 @@ from api.dependencies import get_db, rows_to_dicts
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(responses={200: {"description": "Patient data"}})
 
 
 def _find_case(db, case_id: str):

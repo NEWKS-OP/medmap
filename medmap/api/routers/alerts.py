@@ -14,7 +14,7 @@ from api.dependencies import get_db
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(responses={200: {"description": "Alerts data"}})
 
 # In-memory alert store (populated from audit log on first access)
 _alerts_cache: Optional[list] = None

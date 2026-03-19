@@ -17,7 +17,7 @@ from api.dependencies import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(responses={200: {"description": "Correction results"}})
 
 
 @router.get("/pending")

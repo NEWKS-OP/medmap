@@ -12,7 +12,7 @@ from api.dependencies import get_db, add_ask_history, get_ask_history_list
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(responses={200: {"description": "Query results"}})
 
 # Simple keyword-to-SQL patterns for offline fallback
 SQL_PATTERNS = [

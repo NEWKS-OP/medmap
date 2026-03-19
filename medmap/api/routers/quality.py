@@ -12,7 +12,7 @@ from api.dependencies import get_db, rows_to_dicts
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(responses={200: {"description": "Quality data"}})
 
 
 @router.get("/audit-log")

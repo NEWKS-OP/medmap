@@ -12,7 +12,7 @@ from api.dependencies import get_db
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(responses={200: {"description": "Agent data"}})
 
 
 def _compute_agent_stats(db) -> dict:
