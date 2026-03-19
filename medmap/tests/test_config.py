@@ -303,3 +303,89 @@ class TestAnomalyRules:
         for name, rule in ANOMALY_RULES.items():
             assert "severity" in rule, f"{name} missing severity"
             assert "message" in rule, f"{name} missing message"
+
+
+class TestGenderMapping:
+    def test_male_mapping(self):
+        assert GENDER_MAP["M"] == "M"
+        assert GENDER_MAP["male"] == "M"
+        assert GENDER_MAP["m"] == "M"
+
+    def test_female_mapping(self):
+        assert GENDER_MAP["F"] == "F"
+        assert GENDER_MAP["female"] == "F"
+        assert GENDER_MAP["f"] == "F"
+
+    def test_german_male(self):
+        assert GENDER_MAP["männlich"] == "M"
+
+    def test_german_female(self):
+        assert GENDER_MAP["weiblich"] == "F"
+
+    def test_na_mapping(self):
+        assert GENDER_MAP["N/A"] is None
+        assert GENDER_MAP["n/a"] is None
+
+    def test_empty_mapping(self):
+        assert GENDER_MAP[""] is None
+
+
+class TestNormalizeGenderFunction:
+    def test_male(self):
+        assert normalize_gender("male") == "M"
+
+    def test_female(self):
+        assert normalize_gender("female") == "F"
+
+    def test_none(self):
+        assert normalize_gender(None) is None
+
+    def test_german_abbrev(self):
+        assert normalize_gender("mä") == "M"
+
+    def test_unknown_returns_none(self):
+        assert normalize_gender("xyz") is None
+
+    def test_case_insensitive(self):
+        assert normalize_gender("Male") == "M"
+        assert normalize_gender("FEMALE") == "F"
+
+
+class TestDirtyLabsRename:
+    def test_caseid_renamed(self):
+        assert DIRTY_LABS_RENAME["CaseID"] == "case_id"
+
+    def test_pid_renamed(self):
+        assert DIRTY_LABS_RENAME["PID"] == "patient_id"
+
+    def test_na_renamed(self):
+        assert DIRTY_LABS_RENAME["Na"] == "sodium_mmol_L"
+
+    def test_creat_renamed(self):
+        assert DIRTY_LABS_RENAME["Creat"] == "creatinine_mg_dL"
+
+
+class TestDirtyIcd10Rename:
+    def test_caseid_renamed(self):
+        assert DIRTY_ICD10_RENAME["CaseID"] == "case_id"
+
+    def test_icd10_haupt_renamed(self):
+        assert DIRTY_ICD10_RENAME["ICD10_Haupt"] == "primary_icd10_code"
+
+    def test_station_renamed(self):
+        assert DIRTY_ICD10_RENAME["Station"] == "ward"
+
+
+class TestColumnSignatures:
+    def test_labs_has_required(self):
+        assert "required" in COLUMN_SIGNATURES["labs"]
+
+    def test_epac_pivot_has_check(self):
+        assert "check" in COLUMN_SIGNATURES["epaAC_pivot"]
+
+    def test_all_types_present(self):
+        expected = ["labs", "icd10_ops", "device_motion", "device_1hz",
+                     "medication", "nursing", "epaAC_pivot", "epaAC_sap",
+                     "epaAC_german"]
+        for t in expected:
+            assert t in COLUMN_SIGNATURES

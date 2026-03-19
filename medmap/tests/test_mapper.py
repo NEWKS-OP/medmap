@@ -491,3 +491,265 @@ class TestDecodeSapColumns:
     def test_preserves_row_count(self, mapper, sample_epac_sap_df):
         result = mapper._decode_sap_columns(sample_epac_sap_df)
         assert len(result) == 2
+
+    def test_renames_patgeb_to_dob(self, mapper):
+        df = pd.DataFrame({"PATGEB": ["1990-01-01"], "PATFAL": ["CASE-001"]})
+        result = mapper._decode_sap_columns(df)
+        assert "date_of_birth" in result.columns
+
+    def test_skips_annotation_columns(self, mapper):
+        df = pd.DataFrame({
+            "EPA0001": [170],
+            "EPA0001AN": ["annotation"],
+            "PATFAL": ["CASE-001"],
+        })
+        result = mapper._decode_sap_columns(df)
+        assert "E0_I_001" in result.columns
+        assert "EPA0001AN" in result.columns
+
+
+class TestNormalizeEpacGerman:
+    def test_renames_german_columns(self, mapper):
+        df = pd.DataFrame({
+            "FallID": ["CASE-001"],
+            "Körpergröße": [175],
+            "BMI": [25.0],
+        })
+        result = mapper._normalize_epac_german(df)
+        assert "case_id" in result.columns
+        assert "height" in result.columns
+        assert "bmi" in result.columns
+
+    def test_deduplicates_columns(self, mapper):
+        df = pd.DataFrame({
+            "FallID": ["CASE-001"],
+            "EinschIDFall": ["CASE-001"],
+        })
+        result = mapper._normalize_epac_german(df)
+        assert list(result.columns).count("case_id") <= 1
+
+    def test_preserves_unmapped_columns(self, mapper):
+        df = pd.DataFrame({
+            "FallID": ["CASE-001"],
+            "custom_col": [42],
+        })
+        result = mapper._normalize_epac_german(df)
+        assert "custom_col" in result.columns
+
+
+class TestUnpivotEpac:
+    def test_unpivots_correctly(self, mapper_with_iid, sample_epac_pivot_df):
+        result = mapper_with_iid._unpivot_epac(sample_epac_pivot_df)
+        assert "case_id" in result.columns
+        assert len(result) == 2
+
+    def test_preserves_metadata(self, mapper_with_iid, sample_epac_pivot_df):
+        result = mapper_with_iid._unpivot_epac(sample_epac_pivot_df)
+        if "Station" in result.columns:
+            assert result["Station"].notna().any()
+
+    def test_no_fallid_returns_unchanged(self, mapper):
+        df = pd.DataFrame({"x": [1], "y": [2]})
+        result = mapper._unpivot_epac(df)
+        assert list(result.columns) == ["x", "y"]
+
+
+class TestMapEpacToTarget:
+    def test_maps_case_id(self, mapper):
+        df = pd.DataFrame({
+            "case_id": ["CASE-0001"],
+            "E0_I_001": [175],
+        })
+        result = mapper._map_epac_to_target(df)
+        assert "coCaseId" in result.columns
+        assert result["coCaseId"].iloc[0] == 1
+
+    def test_maps_iid_columns(self, mapper):
+        df = pd.DataFrame({
+            "case_id": ["CASE-0001"],
+            "E0_I_004": [75],
+            "E0_I_005": [25.0],
+        })
+        result = mapper._map_epac_to_target(df)
+        assert "coE0I004" in result.columns
+        assert "coE0I005" in result.columns
+
+    def test_maps_german_names(self, mapper):
+        df = pd.DataFrame({
+            "case_id": ["CASE-0001"],
+            "height": [175],
+            "weight": [80],
+            "bmi": [26.1],
+        })
+        result = mapper._map_epac_to_target(df)
+        assert "coE0I005" in result.columns
+        assert "coE0I004" in result.columns
+
+    def test_empty_without_case_id(self, mapper):
+        df = pd.DataFrame({"val": [1]})
+        result = mapper._map_epac_to_target(df)
+        assert result.empty
+
+
+class TestMapEpac:
+    def test_maps_german_format(self, mapper, sample_epac_german_df):
+        result = mapper.map_epac([sample_epac_german_df])
+        assert not result.empty
+        assert "coCaseId" in result.columns
+
+    def test_maps_sap_format(self, mapper, sample_epac_sap_df):
+        result = mapper.map_epac([sample_epac_sap_df])
+        assert not result.empty
+
+    def test_maps_pivot_format(self, mapper_with_iid, sample_epac_pivot_df):
+        result = mapper_with_iid.map_epac([sample_epac_pivot_df])
+        assert not result.empty
+
+    def test_empty_input(self, mapper):
+        assert mapper.map_epac([]).empty
+
+    def test_merges_multiple_formats(self, mapper, sample_epac_german_df, sample_epac_sap_df):
+        result = mapper.map_epac([sample_epac_german_df, sample_epac_sap_df])
+        assert len(result) >= 4
+
+
+class TestBuildCaseData:
+    def test_builds_from_labs(self, mapper, sample_labs_df):
+        result = mapper.build_case_data({"labs.csv": sample_labs_df})
+        assert not result.empty
+        assert "coId" in result.columns
+
+    def test_builds_from_icd10(self, mapper, sample_icd10_df):
+        result = mapper.build_case_data({"icd10.csv": sample_icd10_df})
+        assert not result.empty
+
+    def test_empty_input(self, mapper):
+        result = mapper.build_case_data({})
+        assert result.empty
+
+    def test_has_patient_id(self, mapper, sample_labs_df):
+        result = mapper.build_case_data({"labs.csv": sample_labs_df})
+        assert "coPatientId" in result.columns
+
+
+class TestMapAll:
+    def test_returns_all_tables(self, mapper, sample_labs_df, sample_icd10_df):
+        frames = {"labs.csv": sample_labs_df, "icd10.csv": sample_icd10_df}
+        result = mapper.map_all(frames)
+        assert "tbCaseData" in result
+        assert "tbImportLabsData" in result
+        assert "tbImportIcd10Data" in result
+
+    def test_clears_warnings(self, mapper, sample_labs_df):
+        mapper.mapping_warnings = ["old warning"]
+        mapper.map_all({"labs.csv": sample_labs_df})
+        # Warnings should have been reset
+        assert "old warning" not in mapper.mapping_warnings
+
+
+class TestGetMappingSummary:
+    def test_returns_summary(self, mapper, sample_labs_df):
+        mapper.map_all({"labs.csv": sample_labs_df})
+        summary = mapper.get_mapping_summary()
+        assert "tbImportLabsData" in summary
+        assert "rows" in summary["tbImportLabsData"]
+        assert "columns" in summary["tbImportLabsData"]
+
+    def test_empty_table_summary(self, mapper):
+        mapper.mapped_tables["test"] = pd.DataFrame()
+        summary = mapper.get_mapping_summary()
+        assert summary["test"]["rows"] == 0
+
+    def test_column_names_in_summary(self, mapper, sample_labs_df):
+        mapper.map_all({"labs.csv": sample_labs_df})
+        summary = mapper.get_mapping_summary()
+        assert "column_names" in summary["tbImportLabsData"]
+        assert isinstance(summary["tbImportLabsData"]["column_names"], list)
+
+
+class TestSapDecoder:
+    def test_lazy_load(self, mapper_with_iid):
+        decoder = mapper_with_iid.sap_decoder
+        assert isinstance(decoder, dict)
+        assert len(decoder) > 0
+
+    def test_empty_without_iid(self, mapper):
+        decoder = mapper.sap_decoder
+        assert decoder == {}
+
+    def test_caches_result(self, mapper_with_iid):
+        d1 = mapper_with_iid.sap_decoder
+        d2 = mapper_with_iid.sap_decoder
+        assert d1 is d2
+
+
+class TestSidToIid:
+    def test_lazy_load(self, mapper_with_iid):
+        sid_map = mapper_with_iid.sid_to_iid
+        assert isinstance(sid_map, dict)
+        assert len(sid_map) > 0
+
+    def test_empty_without_iid(self, mapper):
+        sid_map = mapper.sid_to_iid
+        assert sid_map == {}
+
+    def test_maps_sid_to_iid(self, mapper_with_iid):
+        sid_map = mapper_with_iid.sid_to_iid
+        assert "00_01" in sid_map
+        assert sid_map["00_01"] == "E0_I_001"
+
+
+class TestConvertCaseIdColumn:
+    def test_converts_case_prefix(self, mapper):
+        df = pd.DataFrame({"coCaseId": ["CASE-0042"]})
+        result = mapper._convert_case_id_column(df)
+        assert result["coCaseId"].iloc[0] == 42
+
+    def test_missing_column(self, mapper):
+        df = pd.DataFrame({"other": [1]})
+        result = mapper._convert_case_id_column(df)
+        assert "other" in result.columns
+
+    def test_preserves_none(self, mapper):
+        df = pd.DataFrame({"coCaseId": [None]})
+        result = mapper._convert_case_id_column(df)
+        assert result["coCaseId"].iloc[0] is None
+
+
+class TestGetVal:
+    def test_gets_existing_value(self, mapper):
+        df = pd.DataFrame({"case_id": ["CASE-001"]})
+        assert mapper._get_val(df, 0, "case_id") == "CASE-001"
+
+    def test_returns_none_for_missing_col(self, mapper):
+        df = pd.DataFrame({"x": [1]})
+        assert mapper._get_val(df, 0, "case_id") is None
+
+    def test_returns_none_for_nan(self, mapper):
+        df = pd.DataFrame({"val": [np.nan]})
+        assert mapper._get_val(df, 0, "val") is None
+
+    def test_strips_whitespace(self, mapper):
+        df = pd.DataFrame({"val": [" hello "]})
+        assert mapper._get_val(df, 0, "val") == "hello"
+
+    def test_returns_none_for_empty(self, mapper):
+        df = pd.DataFrame({"val": [""]})
+        assert mapper._get_val(df, 0, "val") is None
+
+
+class TestSetIfMissing:
+    def test_sets_new_key(self, mapper):
+        d = {}
+        mapper._set_if_missing(d, "key", "value")
+        assert d["key"] == "value"
+
+    def test_does_not_overwrite(self, mapper):
+        d = {"key": "old"}
+        mapper._set_if_missing(d, "key", "new")
+        assert d["key"] == "old"
+
+    def test_skips_none_value(self, mapper):
+        d = {}
+        mapper._set_if_missing(d, "key", None)
+        assert "key" not in d

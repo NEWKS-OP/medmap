@@ -373,5 +373,193 @@ class TestIntegrationWithRealData:
             assert score.score >= 0
 
 
+class TestValidatorHelpers:
+    def test_is_missing_none(self):
+        v = DataValidator()
+        assert v._is_missing(None) is True
+
+    def test_is_missing_nan(self):
+        v = DataValidator()
+        assert v._is_missing(float("nan")) is True
+
+    def test_is_missing_string(self):
+        v = DataValidator()
+        assert v._is_missing("null") is True
+
+    def test_is_missing_valid(self):
+        v = DataValidator()
+        assert v._is_missing(140.0) is False
+
+    def test_missing_severity_critical(self):
+        v = DataValidator()
+        assert v._missing_severity("case_id", "labs") == Severity.CRITICAL
+
+    def test_missing_severity_high(self):
+        v = DataValidator()
+        assert v._missing_severity("timestamp", "device_motion") == Severity.HIGH
+
+    def test_missing_severity_low(self):
+        v = DataValidator()
+        assert v._missing_severity("some_col", "labs") == Severity.LOW
+
+    def test_table_for_type_labs(self):
+        v = DataValidator()
+        assert v._table_for_type("labs") == "tbImportLabsData"
+
+    def test_table_for_type_unknown(self):
+        v = DataValidator()
+        assert v._table_for_type("unknown") == "unknown"
+
+    def test_extract_case_id_from_case_col(self):
+        v = DataValidator()
+        df = pd.DataFrame({"case_id": ["CASE-001"]})
+        assert v._extract_case_id(df, 0) == "CASE-001"
+
+    def test_extract_case_id_from_patient(self):
+        v = DataValidator()
+        df = pd.DataFrame({"patient_id": ["PAT-100"]})
+        assert v._extract_case_id(df, 0) == "PAT-100"
+
+    def test_extract_case_id_fallback(self):
+        v = DataValidator()
+        df = pd.DataFrame({"val": [1]})
+        result = v._extract_case_id(df, 0)
+        assert "row_" in result
+
+
+class TestValidatorTryParseDate:
+    def test_iso_format(self):
+        v = DataValidator()
+        result = v._try_parse_date("2025-01-15")
+        assert result is not None
+        assert result.year == 2025
+
+    def test_german_format(self):
+        v = DataValidator()
+        result = v._try_parse_date("15.03.2025")
+        assert result is not None
+        assert result.month == 3
+
+    def test_impossible_date(self):
+        v = DataValidator()
+        assert v._try_parse_date("99.99.9999") is None
+
+    def test_empty_string(self):
+        v = DataValidator()
+        assert v._try_parse_date("") is None
+
+
+class TestValidatorTryParseNumeric:
+    def test_float_value(self):
+        v = DataValidator()
+        assert v._try_parse_numeric(3.14) == 3.14
+
+    def test_string_number(self):
+        v = DataValidator()
+        assert v._try_parse_numeric("140.5") == 140.5
+
+    def test_comma_decimal(self):
+        v = DataValidator()
+        assert v._try_parse_numeric("3,14") == 3.14
+
+    def test_non_numeric(self):
+        v = DataValidator()
+        assert v._try_parse_numeric("abc") is None
+
+    def test_special_chars(self):
+        v = DataValidator()
+        result = v._try_parse_numeric("13ü0")
+        assert result == 130.0
+
+
+class TestValidateAll:
+    def test_validates_multiple(self):
+        df1 = make_labs_df()
+        df2 = make_motion_df()
+        v = DataValidator()
+        scores = v.validate_all({"labs.csv": df1, "motion.csv": df2})
+        assert "labs.csv" in scores
+        assert "motion.csv" in scores
+
+    def test_handles_error(self):
+        v = DataValidator()
+        scores = v.validate_all({"bad.csv": pd.DataFrame()})
+        assert "bad.csv" in scores
+
+
+class TestValidateGender:
+    def test_valid_genders_pass(self):
+        df = make_labs_df({"sex": ["M", "F", "M"]})
+        v = DataValidator()
+        v.validate_dataframe(df, "test.csv")
+        gender_invalid = [e for e in v.audit_log if e.error_type == "GENDER_INVALID"]
+        assert len(gender_invalid) == 0
+
+    def test_unknown_gender_flagged(self):
+        df = make_labs_df({"sex": ["M", "UNKNOWN_VAL", "F"]})
+        v = DataValidator()
+        v.validate_dataframe(df, "test.csv")
+        gender_invalid = [e for e in v.audit_log if e.error_type == "GENDER_INVALID"]
+        assert len(gender_invalid) >= 1
+
+
+class TestValidateIds:
+    def test_valid_case_id_passes(self):
+        df = make_labs_df({"case_id": ["CASE-001", "CASE-0042", "CASE-999"]})
+        v = DataValidator()
+        v.validate_dataframe(df, "test.csv")
+        id_invalid = [e for e in v.audit_log if e.error_type == "ID_INVALID"
+                       and e.column_name == "case_id"]
+        assert len(id_invalid) == 0
+
+    def test_invalid_case_id_flagged(self):
+        df = make_labs_df({"case_id": ["CASE-001", "BADID", "CASE-999"]})
+        v = DataValidator()
+        v.validate_dataframe(df, "test.csv")
+        id_invalid = [e for e in v.audit_log if e.error_type == "ID_INVALID"
+                       and e.column_name == "case_id"]
+        assert len(id_invalid) >= 1
+
+
+class TestValidateLabFlags:
+    def test_valid_flags_pass(self):
+        df = make_labs_df({"sodium_flag": ["H", "L", ""]})
+        v = DataValidator()
+        v.validate_dataframe(df, "test.csv")
+        flag_invalid = [e for e in v.audit_log if e.error_type == "LAB_FLAG_INVALID"]
+        assert len(flag_invalid) == 0
+
+    def test_invalid_flag_detected(self):
+        df = make_labs_df({"sodium_flag": ["H", "WRONG", "L"]})
+        v = DataValidator()
+        v.validate_dataframe(df, "test.csv")
+        flag_invalid = [e for e in v.audit_log if e.error_type == "LAB_FLAG_INVALID"]
+        assert len(flag_invalid) >= 1
+
+
+class TestGetAuditLogDf:
+    def test_returns_dataframe(self):
+        v = DataValidator()
+        df = make_labs_df({"sodium_mmol_L": [999.0, 140.0, 140.0]})
+        v.validate_dataframe(df, "test.csv")
+        log_df = v.get_audit_log_df()
+        assert isinstance(log_df, pd.DataFrame)
+        assert len(log_df) > 0
+
+    def test_empty_returns_empty_df(self):
+        v = DataValidator()
+        log_df = v.get_audit_log_df()
+        assert log_df.empty
+
+    def test_has_expected_columns(self):
+        v = DataValidator()
+        df = make_labs_df({"sodium_mmol_L": [999.0, 140.0, 140.0]})
+        v.validate_dataframe(df, "test.csv")
+        log_df = v.get_audit_log_df()
+        assert "error_type" in log_df.columns
+        assert "severity" in log_df.columns
+        assert "source_file" in log_df.columns
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

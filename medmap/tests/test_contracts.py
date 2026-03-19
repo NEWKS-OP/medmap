@@ -267,3 +267,273 @@ class TestSessionKeys:
 
     def test_has_db_conn(self):
         assert "db_conn" in SESSION_KEYS
+
+    def test_has_quality_scores(self):
+        assert "quality_scores" in SESSION_KEYS
+
+    def test_has_audit_log(self):
+        assert "audit_log" in SESSION_KEYS
+
+    def test_has_clinical_alerts(self):
+        assert "clinical_alerts" in SESSION_KEYS
+
+    def test_has_selected_case(self):
+        assert "selected_case" in SESSION_KEYS
+
+
+class TestColumnMapping:
+    def test_creation(self):
+        cm = ColumnMapping(
+            source_file="test.csv",
+            source_column="sodium",
+            target_column="coSodium_mmol_L",
+            confidence=0.95,
+            badge=AgentConfidenceBadge.AUTO,
+            status="CONSENSUS",
+        )
+        assert cm.confidence == 0.95
+        assert cm.status == "CONSENSUS"
+
+    def test_optional_fields(self):
+        cm = ColumnMapping(
+            source_file="t", source_column="s", target_column="t",
+            confidence=0.5, badge=AgentConfidenceBadge.REVIEW, status="UNCERTAIN",
+        )
+        assert cm.detective_result is None
+        assert cm.validation_result is None
+
+
+class TestWardScore:
+    def test_creation(self):
+        w = WardScore(
+            ward_name="Cardio", score=85,
+            nb_patients=50, nb_errors=10, rank=1,
+        )
+        assert w.ward_name == "Cardio"
+        assert w.rank == 1
+
+    def test_default_axes(self):
+        w = WardScore(
+            ward_name="t", score=0, nb_patients=0, nb_errors=0, rank=1,
+        )
+        assert w.axes == {}
+
+
+class TestClinicalAlert:
+    def test_creation(self):
+        from datetime import datetime
+        a = ClinicalAlert(
+            case_id="CASE-001",
+            rule_name="AKI_PROBABLE",
+            severity=Severity.CRITICAL,
+            message="AKI detected",
+            sources_involved=["labs", "medication"],
+            triggered_values={"creatinine": 4.2},
+        )
+        assert a.rule_name == "AKI_PROBABLE"
+        assert len(a.sources_involved) == 2
+
+    def test_default_sbar(self):
+        a = ClinicalAlert(
+            case_id="c", rule_name="r", severity=Severity.LOW,
+            message="m", sources_involved=[], triggered_values={},
+        )
+        assert a.sbar is None
+        assert a.is_treated is False
+
+
+class TestLabResult:
+    def test_creation(self):
+        lr = LabResult(
+            parameter_name="Sodium",
+            value="140",
+            flag="H",
+            ref_low="136",
+            ref_high="145",
+            original_value="140ü",
+            was_corrected=True,
+        )
+        assert lr.parameter_name == "Sodium"
+        assert lr.was_corrected is True
+
+
+class TestCorrectionRequest:
+    def test_creation(self):
+        cr = CorrectionRequest(
+            audit_log_id=1,
+            case_id="CASE-001",
+            table_name="tbImportLabsData",
+            column_name="sodium",
+            original_value="999",
+            current_value=None,
+            new_value="140",
+            action=ActionTaken.MANUAL_CORRECT,
+        )
+        assert cr.corrected_by == "manual"
+
+
+class TestCorrectionResult:
+    def test_success(self):
+        cr = CorrectionResult(
+            success=True,
+            audit_log_id=1,
+            previous_value="999",
+            new_value="140",
+            action=ActionTaken.MANUAL_CORRECT,
+        )
+        assert cr.success is True
+        assert cr.error is None
+
+
+class TestStreamingProgress:
+    def test_creation(self):
+        sp = StreamingProgress(
+            processed=1000, total=10000, pct=0.1,
+            falls=2, anomalies=5, patients=3,
+        )
+        assert sp.processed == 1000
+        assert sp.pct == 0.1
+
+
+class TestAskDataResult:
+    def test_creation(self):
+        r = AskDataResult(
+            question="How many patients?",
+            sql_generated="SELECT COUNT(*) FROM tbCaseData",
+            row_count=1,
+        )
+        assert r.question == "How many patients?"
+        assert r.error is None
+
+    def test_with_error(self):
+        r = AskDataResult(
+            question="Bad query",
+            sql_generated="INVALID SQL",
+            error="SQL error",
+        )
+        assert r.error == "SQL error"
+
+
+class TestDataPassport:
+    def test_creation(self):
+        dp = DataPassport(
+            passport_id=1,
+            case_id="CASE-001",
+            table_name="tbImportLabsData",
+            field_name="sodium",
+            raw_value="999",
+            cleaned_value=None,
+            detected_by="cleaner",
+            problem_type=ProblemType.OUTLIER,
+            problem_detail="Value out of range",
+            action_taken=ActionTaken.QUARANTINE,
+            confidence=0.95,
+            validated_by=None,
+            fhir_alignment=None,
+            status=PassportStatus.QUARANTINE,
+        )
+        assert dp.passport_id == 1
+        assert dp.problem_type == ProblemType.OUTLIER
+
+
+class TestPatientSummary:
+    def test_creation(self):
+        ps = PatientSummary(
+            case_id="CASE-001",
+            patient_id="PAT-100",
+            age=65,
+            gender="M",
+            ward="Cardio",
+            admission_date="2025-01-15",
+            discharge_date="2025-01-25",
+            primary_icd10="I50.0",
+            primary_icd10_desc="Heart failure",
+        )
+        assert ps.case_id == "CASE-001"
+        assert ps.convergence_score is None
+
+
+class TestNursingNLPResult:
+    def test_creation(self):
+        r = NursingNLPResult(
+            case_id="CASE-001",
+            shift=Shift.EARLY,
+            report_date="2025-01-15",
+            pain_level=3,
+            mobility_status=MobilityStatus.ASSISTED,
+            wound_grade="2",
+        )
+        assert r.pain_level == 3
+        assert r.deterioration_flag is False
+
+
+class TestAgentConfidenceBadgeEnum:
+    def test_auto(self):
+        assert AgentConfidenceBadge.AUTO.value == "AUTO"
+
+    def test_check(self):
+        assert AgentConfidenceBadge.CHECK.value == "CHECK"
+
+    def test_review(self):
+        assert AgentConfidenceBadge.REVIEW.value == "REVIEW"
+
+    def test_is_string(self):
+        assert isinstance(AgentConfidenceBadge.AUTO, str)
+
+
+class TestEventTypeEnum:
+    def test_order(self):
+        assert EventType.ORDER.value == "ORDER"
+
+    def test_change(self):
+        assert EventType.CHANGE.value == "CHANGE"
+
+    def test_admin(self):
+        assert EventType.ADMIN.value == "ADMIN"
+
+
+class TestTimelineEventTypeEnum:
+    def test_lab(self):
+        assert TimelineEventType.LAB.value == "LAB"
+
+    def test_motion_hourly(self):
+        assert TimelineEventType.MOTION_HOURLY.value == "MOTION_HOURLY"
+
+    def test_medication(self):
+        assert TimelineEventType.MEDICATION.value == "MEDICATION"
+
+    def test_nursing(self):
+        assert TimelineEventType.NURSING.value == "NURSING"
+
+    def test_alert(self):
+        assert TimelineEventType.ALERT.value == "ALERT"
+
+    def test_assessment(self):
+        assert TimelineEventType.ASSESSMENT.value == "ASSESSMENT"
+
+
+class TestPassportStatusEnum:
+    def test_quarantine(self):
+        assert PassportStatus.QUARANTINE.value == "QUARANTINE"
+
+    def test_clean(self):
+        assert PassportStatus.CLEAN.value == "CLEAN"
+
+    def test_pending_review(self):
+        assert PassportStatus.PENDING_REVIEW.value == "PENDING_REVIEW"
+
+    def test_is_string(self):
+        assert isinstance(PassportStatus.CLEAN, str)
+
+
+class TestConvergenceScore:
+    def test_creation(self):
+        cs = ConvergenceScore(
+            case_id="CASE-001",
+            total_score=75,
+            risk_level=RiskLevel.HIGH,
+            breakdown={"labs": 30, "motion": 20},
+            top_contributors=["creatinine", "falls", "pain"],
+        )
+        assert cs.total_score == 75
+        assert len(cs.top_contributors) == 3
