@@ -1,0 +1,20 @@
+version: '3.8'
+services:
+  backend:
+    build: ./medmap
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./medmap/data:/app/data
+    env_file:
+      - ./medmap/.env
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://backend:8000
+      - NEXT_PUBLIC_USE_MOCKS=false
+    depends_on:
+      - backend
