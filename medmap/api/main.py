@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="MEDMAP API",
     version="1.0.1",
-    description="Smart Health Data Mapping API — 25 endpoints for medical data pipeline, 9 routers",
+    description="Smart Health Data Mapping API — 27 endpoints for medical data pipeline, 9 routers",
     lifespan=lifespan,
 )
 
@@ -56,7 +56,7 @@ app.include_router(corrections.router, prefix="/api/corrections", tags=["correct
 
 @app.get("/")
 async def root():
-    return {"name": "MEDMAP API", "version": "1.0.0", "status": "running", "endpoints": 25}
+    return {"name": "MEDMAP API", "version": "1.0.0", "status": "running", "endpoints": 27}
 
 
 @app.get("/health")

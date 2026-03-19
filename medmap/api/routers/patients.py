@@ -106,6 +106,44 @@ async def list_patients(ward: str = Query(None, description="Filter by ward name
         return []
 
 
+@router.get("/search")
+async def search_patients(
+    q: str = Query("", description="Search term for patient ID, case ID, or ward"),
+    limit: int = Query(20, ge=1, le=100),
+) -> list[dict]:
+    """Search patients by case ID, patient ID, or ward name."""
+    db = get_db()
+    try:
+        if not q.strip():
+            return []
+        pattern = f"%{q}%"
+        rows = db.execute(
+            """SELECT c.coId, c.coCaseIdAlpha, c.coPatientId, c.coGender, c.coAgeYears,
+                      i.coWard, i.coPrimary_icd10_code
+               FROM tbCaseData c
+               LEFT JOIN (SELECT coCaseId, coWard, coPrimary_icd10_code
+                          FROM tbImportIcd10Data GROUP BY coCaseId) i ON i.coCaseId = c.coId
+               WHERE c.coCaseIdAlpha LIKE ? OR CAST(c.coPatientId AS TEXT) LIKE ? OR i.coWard LIKE ?
+               LIMIT ?""",
+            (pattern, pattern, pattern, limit),
+        ).fetchall()
+
+        return [
+            {
+                "case_id": r["coCaseIdAlpha"] or str(r["coId"]),
+                "patient_id": str(r["coPatientId"]) if r["coPatientId"] else None,
+                "age": r["coAgeYears"],
+                "gender": r["coGender"],
+                "ward": r["coWard"],
+                "primary_icd10": r["coPrimary_icd10_code"],
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        logger.error("search_patients error: %s", e)
+        return []
+
+
 @router.get("/{case_id}")
 async def get_patient(case_id: str) -> dict:
     """Get detailed patient summary including demographics and ICD data."""
@@ -501,6 +539,53 @@ async def get_patient_convergence(case_id: str) -> dict:
     except Exception as e:
         logger.error("get_patient_convergence error: %s", e)
         return {"case_id": case_id, "total_score": 0, "risk_level": "LOW", "breakdown": {}, "top_contributors": [], "computed_at": ""}
+
+
+@router.get("/{case_id}/motion-summary")
+async def get_patient_motion_summary(case_id: str) -> dict:
+    """Get device motion summary for a patient including fall events and activity stats."""
+    db = get_db()
+    try:
+        case = _find_case(db, case_id)
+        if not case:
+            return {"case_id": case_id, "total_records": 0}
+
+        cid = case["coId"]
+        total = db.execute(
+            "SELECT COUNT(*) as cnt FROM tbImportDeviceMotionData WHERE coCaseId = ?", (cid,)
+        ).fetchone()["cnt"]
+
+        falls = db.execute(
+            "SELECT COUNT(*) as cnt FROM tbImportDeviceMotionData WHERE coCaseId = ? AND coFall_event_0_1 = '1'",
+            (cid,),
+        ).fetchone()["cnt"]
+
+        bed_exits = db.execute(
+            "SELECT COUNT(*) as cnt FROM tbImportDeviceMotionData WHERE coCaseId = ? AND coBed_exit_detected_0_1 = '1'",
+            (cid,),
+        ).fetchone()["cnt"]
+
+        avg_movement = db.execute(
+            "SELECT AVG(CAST(coMovement_index_0_100 AS FLOAT)) as avg_mov FROM tbImportDeviceMotionData WHERE coCaseId = ? AND coMovement_index_0_100 IS NOT NULL",
+            (cid,),
+        ).fetchone()["avg_mov"]
+
+        max_impact = db.execute(
+            "SELECT MAX(CAST(coImpact_magnitude_g AS FLOAT)) as max_imp FROM tbImportDeviceMotionData WHERE coCaseId = ? AND coImpact_magnitude_g IS NOT NULL",
+            (cid,),
+        ).fetchone()["max_imp"]
+
+        return {
+            "case_id": case_id,
+            "total_records": total,
+            "fall_events": falls,
+            "bed_exits": bed_exits,
+            "avg_movement_index": round(avg_movement, 1) if avg_movement else None,
+            "max_impact_g": round(max_impact, 2) if max_impact else None,
+        }
+    except Exception as e:
+        logger.error("get_patient_motion_summary error: %s", e)
+        return {"case_id": case_id, "total_records": 0}
 
 
 @router.get("/{case_id}/passports")

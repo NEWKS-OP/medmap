@@ -3,6 +3,7 @@ Alerts router — clinical alerts from cross-dataset anomaly detection.
 GET   /api/alerts
 PATCH /api/alerts/{case_id}/{rule_name}
 GET   /api/alerts/summary
+GET   /api/alerts/export
 """
 
 import logging
@@ -208,3 +209,49 @@ async def mark_alert_treated(case_id: str, rule_name: str, body: dict = Body(def
     except Exception as e:
         logger.error("mark_alert_treated error: %s", e)
         return {"error": str(e)}
+
+
+@router.get("/export")
+async def export_alerts(
+    severity: str = Query(None, description="Filter severity (comma-separated)"),
+    treated: bool = Query(None, description="Filter by treated status"),
+) -> list[dict]:
+    """Export all alerts in a flat format suitable for CSV/spreadsheet use.
+
+    Returns simplified alert records with SBAR fields flattened."""
+    db = get_db()
+    try:
+        alerts = _get_alerts(db)
+        result = list(alerts)
+
+        if severity:
+            sev_set = set(severity.upper().split(","))
+            result = [a for a in result if a["severity"] in sev_set]
+
+        if treated is not None:
+            result = [a for a in result if a["is_treated"] == treated]
+
+        export = []
+        for a in result:
+            row = {
+                "case_id": a["case_id"],
+                "rule_name": a["rule_name"],
+                "severity": a["severity"],
+                "message": a["message"],
+                "sources": ", ".join(a.get("sources_involved") or []),
+                "is_treated": a["is_treated"],
+                "treated_by": a.get("treated_by"),
+                "timestamp": a.get("timestamp_generated"),
+            }
+            sbar = a.get("sbar")
+            if sbar:
+                row["sbar_situation"] = sbar.get("S", "")
+                row["sbar_background"] = sbar.get("B", "")
+                row["sbar_assessment"] = sbar.get("A", "")
+                row["sbar_recommendation"] = sbar.get("R", "")
+            export.append(row)
+
+        return export
+    except Exception as e:
+        logger.error("export_alerts error: %s", e)
+        return []

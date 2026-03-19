@@ -1,7 +1,8 @@
 """
-Overview router — quality scores, ward scores, report generation.
+Overview router — quality scores, ward scores, report generation, summary.
 GET  /api/overview/quality-scores
 GET  /api/overview/ward-scores
+GET  /api/overview/summary
 POST /api/overview/generate-report
 """
 
@@ -75,6 +76,66 @@ async def get_quality_scores() -> list[dict]:
     except Exception as e:
         logger.error("quality-scores error: %s", e)
         return []
+
+
+@router.get("/summary")
+async def get_summary() -> dict:
+    """Get global dashboard summary in a single call.
+
+    Returns patient count, table row counts, alert counts, and top-level stats
+    so the frontend Overview page can render with one request."""
+    db = get_db()
+    try:
+        tables = [
+            "tbCaseData", "tbImportLabsData", "tbImportIcd10Data",
+            "tbImportDeviceMotionData", "tbImportMedicationInpatientData",
+            "tbImportNursingDailyReportsData", "tbImportAcData",
+        ]
+        table_counts = {}
+        for t in tables:
+            try:
+                table_counts[t] = db.execute(f"SELECT COUNT(*) as cnt FROM {t}").fetchone()["cnt"]
+            except Exception:
+                table_counts[t] = 0
+
+        audit_total = db.execute("SELECT COUNT(*) as cnt FROM tbAuditLog").fetchone()["cnt"]
+        audit_critical = db.execute(
+            "SELECT COUNT(*) as cnt FROM tbAuditLog WHERE severity = 'CRITICAL'"
+        ).fetchone()["cnt"]
+        quarantined = db.execute(
+            "SELECT COUNT(*) as cnt FROM tbAuditLog WHERE action_taken = 'QUARANTINE'"
+        ).fetchone()["cnt"]
+        auto_corrected = db.execute(
+            "SELECT COUNT(*) as cnt FROM tbAuditLog WHERE action_taken = 'AUTO_CORRECT'"
+        ).fetchone()["cnt"]
+
+        passports_total = 0
+        passports_pending = 0
+        try:
+            passports_total = db.execute("SELECT COUNT(*) as cnt FROM tbDataPassport").fetchone()["cnt"]
+            passports_pending = db.execute(
+                "SELECT COUNT(*) as cnt FROM tbDataPassport WHERE status = 'PENDING_REVIEW'"
+            ).fetchone()["cnt"]
+        except Exception:
+            pass
+
+        return {
+            "total_patients": table_counts.get("tbCaseData", 0),
+            "table_counts": table_counts,
+            "audit_log": {
+                "total": audit_total,
+                "critical": audit_critical,
+                "quarantined": quarantined,
+                "auto_corrected": auto_corrected,
+            },
+            "data_passports": {
+                "total": passports_total,
+                "pending_review": passports_pending,
+            },
+        }
+    except Exception as e:
+        logger.error("summary error: %s", e)
+        return {"total_patients": 0, "table_counts": {}, "audit_log": {}, "data_passports": {}}
 
 
 @router.get("/ward-scores")
