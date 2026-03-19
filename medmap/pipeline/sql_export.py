@@ -236,6 +236,32 @@ class SQLExporter:
             )
         """)
 
+    def _create_indexes(self):
+        """Create indexes on frequently queried columns for API performance."""
+        indexes = [
+            "CREATE INDEX IF NOT EXISTS idx_audit_source ON tbAuditLog(source_file)",
+            "CREATE INDEX IF NOT EXISTS idx_audit_case ON tbAuditLog(case_id)",
+            "CREATE INDEX IF NOT EXISTS idx_audit_severity ON tbAuditLog(severity)",
+            "CREATE INDEX IF NOT EXISTS idx_audit_action ON tbAuditLog(action_taken)",
+            "CREATE INDEX IF NOT EXISTS idx_passport_case ON tbDataPassport(case_id)",
+            "CREATE INDEX IF NOT EXISTS idx_passport_status ON tbDataPassport(status)",
+            "CREATE INDEX IF NOT EXISTS idx_labs_case ON tbImportLabsData(coCaseId)",
+            "CREATE INDEX IF NOT EXISTS idx_icd_case ON tbImportIcd10Data(coCaseId)",
+            "CREATE INDEX IF NOT EXISTS idx_icd_ward ON tbImportIcd10Data(coWard)",
+            "CREATE INDEX IF NOT EXISTS idx_motion_case ON tbImportDeviceMotionData(coCaseId)",
+            "CREATE INDEX IF NOT EXISTS idx_med_case ON tbImportMedicationInpatientData(coCaseId)",
+            "CREATE INDEX IF NOT EXISTS idx_nursing_case ON tbImportNursingDailyReportsData(coCaseId)",
+            "CREATE INDEX IF NOT EXISTS idx_ac_case ON tbImportAcData(coCaseId)",
+            "CREATE INDEX IF NOT EXISTS idx_case_alpha ON tbCaseData(coCaseIdAlpha)",
+        ]
+        for idx_sql in indexes:
+            try:
+                self.conn.execute(idx_sql)
+            except sqlite3.Error as e:
+                logger.warning("Index creation failed: %s — %s", idx_sql[:50], e)
+        self.conn.commit()
+        logger.info("Created %d database indexes", len(indexes))
+
     # ──────────────────────────────────────────────
     # DATA INSERTION
     # ──────────────────────────────────────────────
@@ -538,6 +564,9 @@ class SQLExporter:
                 if e.error_type not in ("MISSING_VALUE", "PID_PREFIXED", "MISSING_NORMALIZED")
             ]
             passport_count = self.insert_data_passports(significant)
+
+        # Create indexes for API query performance
+        self._create_indexes()
 
         summary = {
             "db_path": self.db_path,

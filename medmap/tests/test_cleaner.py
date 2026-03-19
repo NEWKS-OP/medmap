@@ -56,7 +56,8 @@ class TestIsMissingToken:
         assert cleaner._is_missing_token("hello") is False
 
     def test_empty_string(self, cleaner):
-        assert cleaner._is_missing_token("") is False
+        # Empty string is treated as a missing value
+        assert cleaner._is_missing_token("") is True
 
     def test_unknown_string(self, cleaner):
         assert cleaner._is_missing_token("unknown") is True

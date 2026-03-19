@@ -128,19 +128,20 @@ async def rollback_correction(body: dict = Body(default={})) -> dict:
         previous_value = audit_entry["cleaned_value"]
         original_value = audit_entry["original_value"]
 
+        now = datetime.now().isoformat()
         db.execute(
             """UPDATE tbAuditLog
                SET cleaned_value = NULL, action_taken = 'ROLLBACK',
                    corrected_by = 'rollback', correction_timestamp = ?
                WHERE coId = ?""",
-            (datetime.now().isoformat(), audit_log_id),
+            (now, audit_log_id),
         )
 
         db.execute(
             """UPDATE tbDataPassport
                SET status = 'QUARANTINE', cleaned_value = NULL, updated_at = ?
                WHERE case_id = ? AND field_name = ?""",
-            (datetime.now().isoformat(), audit_entry["case_id"], audit_entry["column_name"]),
+            (now, audit_entry["case_id"], audit_entry["column_name"]),
         )
 
         db.commit()

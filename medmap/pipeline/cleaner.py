@@ -271,7 +271,7 @@ class DataCleaner:
                             "%d.%m.%Y"
                         )
                     except ValueError:
-                        pass
+                        logger.debug("German month parse failed for: %s", val)
 
         # Pass 5: dateutil fallback
         try:
@@ -281,65 +281,13 @@ class DataCleaner:
                 return None
             return d
         except Exception:
-            pass
+            logger.debug("dateutil parse failed for: %s", val)
 
         return None
 
     # ──────────────────────────────────────────────
     # 2.4 CLINICAL NUMERIC CLEANING
     # ──────────────────────────────────────────────
-
-    def _clean_clinical_numerics(self, df, source_file, file_type):
-        """Clean numeric clinical columns: strip special chars, validate ranges."""
-        for col, (low, high) in CLINICAL_RANGES.items():
-            if col not in df.columns:
-                continue
-
-            # Store raw values before cleaning
-            raw_col = f"{col}_raw"
-            if raw_col not in df.columns:
-                df[raw_col] = df[col].copy()
-
-            for idx in df.index:
-                val = df.at[idx, col]
-                if pd.isna(val) if isinstance(val, float) else val is None:
-                    continue
-
-                num_val = self._try_parse_numeric(val)
-                if num_val is None:
-                    # Non-numeric contamination — try stripping special chars
-                    cleaned_str = SPECIAL_CHARS_PATTERN.sub("", str(val)).strip().replace(",", ".")
-                    try:
-                        num_val = float(cleaned_str)
-                    except (ValueError, TypeError):
-                        self._log_change(
-                            source_file, df, idx, file_type, col,
-                            str(val), None,
-                            "NON_NUMERIC_CLEANED", Severity.HIGH, ActionTaken.QUARANTINE,
-                        )
-                        df.at[idx, col] = np.nan
-                        continue
-
-                    # Successfully cleaned
-                    self._log_change(
-                        source_file, df, idx, file_type, col,
-                        str(val), str(num_val),
-                        "SPECIAL_CHARS_REMOVED", Severity.LOW, ActionTaken.AUTO_CORRECT,
-                    )
-                    df.at[idx, col] = num_val
-
-                # Check range
-                if num_val is not None and (num_val < low or num_val > high):
-                    self._log_change(
-                        source_file, df, idx, file_type, col,
-                        str(val), None,
-                        "CLINICAL_OUTLIER", Severity.CRITICAL, ActionTaken.QUARANTINE,
-                    )
-                    df.at[idx, col] = np.nan
-                elif num_val is not None and not isinstance(df.at[idx, col], float):
-                    # Ensure it's stored as numeric
-                    df.at[idx, col] = num_val
-        return df
 
     # Device-specific numeric columns that need special char stripping
     DEVICE_NUMERIC_COLS = {
@@ -360,52 +308,72 @@ class DataCleaner:
         "is_prn_0_1": (0, 1),
     }
 
+    def _clean_clinical_numerics(self, df, source_file, file_type):
+        """Clean numeric clinical columns: strip special chars, validate ranges."""
+        for col, (low, high) in CLINICAL_RANGES.items():
+            if col not in df.columns:
+                continue
+            # Store raw values before cleaning
+            raw_col = f"{col}_raw"
+            if raw_col not in df.columns:
+                df[raw_col] = df[col].copy()
+            df = self._clean_numeric_column(
+                df, col, low, high, source_file, file_type,
+                "CLINICAL_OUTLIER", Severity.CRITICAL,
+            )
+        return df
+
     def _clean_device_numerics(self, df, source_file, file_type):
         """Clean device-specific numeric columns: strip special chars, coerce to float."""
         for col, (low, high) in self.DEVICE_NUMERIC_COLS.items():
             if col not in df.columns:
                 continue
-            # Skip columns already in CLINICAL_RANGES (handled elsewhere)
-            if col in CLINICAL_RANGES:
+            df = self._clean_numeric_column(
+                df, col, low, high, source_file, file_type,
+                "DEVICE_VALUE_OUTLIER", Severity.HIGH,
+            )
+        return df
+
+    def _clean_numeric_column(self, df, col, low, high, source_file, file_type,
+                              outlier_error_type, outlier_severity):
+        """Shared helper: strip special chars from a numeric column, validate range."""
+        for idx in df.index:
+            val = df.at[idx, col]
+            if pd.isna(val) if isinstance(val, float) else val is None:
                 continue
 
-            for idx in df.index:
-                val = df.at[idx, col]
-                if pd.isna(val) if isinstance(val, float) else val is None:
-                    continue
-
-                num_val = self._try_parse_numeric(val)
-                if num_val is None:
-                    # Strip special chars and retry
-                    cleaned_str = SPECIAL_CHARS_PATTERN.sub("", str(val)).strip().replace(",", ".")
-                    try:
-                        num_val = float(cleaned_str)
-                    except (ValueError, TypeError):
-                        self._log_change(
-                            source_file, df, idx, file_type, col,
-                            str(val), None,
-                            "NON_NUMERIC_CLEANED", Severity.HIGH, ActionTaken.QUARANTINE,
-                        )
-                        df.at[idx, col] = np.nan
-                        continue
-
-                    self._log_change(
-                        source_file, df, idx, file_type, col,
-                        str(val), str(num_val),
-                        "SPECIAL_CHARS_REMOVED", Severity.LOW, ActionTaken.AUTO_CORRECT,
-                    )
-                    df.at[idx, col] = num_val
-
-                # Validate range
-                if num_val is not None and (num_val < low or num_val > high):
+            num_val = self._try_parse_numeric(val)
+            if num_val is None:
+                # Non-numeric contamination — try stripping special chars
+                cleaned_str = SPECIAL_CHARS_PATTERN.sub("", str(val)).strip().replace(",", ".")
+                try:
+                    num_val = float(cleaned_str)
+                except (ValueError, TypeError):
                     self._log_change(
                         source_file, df, idx, file_type, col,
                         str(val), None,
-                        "DEVICE_VALUE_OUTLIER", Severity.HIGH, ActionTaken.QUARANTINE,
+                        "NON_NUMERIC_CLEANED", Severity.HIGH, ActionTaken.QUARANTINE,
                     )
                     df.at[idx, col] = np.nan
-                elif num_val is not None and not isinstance(df.at[idx, col], float):
-                    df.at[idx, col] = num_val
+                    continue
+
+                self._log_change(
+                    source_file, df, idx, file_type, col,
+                    str(val), str(num_val),
+                    "SPECIAL_CHARS_REMOVED", Severity.LOW, ActionTaken.AUTO_CORRECT,
+                )
+                df.at[idx, col] = num_val
+
+            # Validate range
+            if num_val is not None and (num_val < low or num_val > high):
+                self._log_change(
+                    source_file, df, idx, file_type, col,
+                    str(val), None,
+                    outlier_error_type, outlier_severity, ActionTaken.QUARANTINE,
+                )
+                df.at[idx, col] = np.nan
+            elif num_val is not None and not isinstance(df.at[idx, col], float):
+                df.at[idx, col] = num_val
         return df
 
     def _try_parse_numeric(self, val) -> Optional[float]:

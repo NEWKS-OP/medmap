@@ -63,31 +63,17 @@ async def list_patients(ward: str = Query(None, description="Filter by ward name
     """List patients with optional ward filter and pagination."""
     db = get_db()
     try:
+        base_sql = """SELECT c.coId, c.coCaseIdAlpha, c.coPatientId, c.coGender, c.coAgeYears, c.coIcd,
+                      i.coWard, i.coAdmission_date, i.coDischarge_date,
+                      i.coPrimary_icd10_code, i.coPrimary_icd10_description_en
+               FROM tbCaseData c
+               LEFT JOIN (SELECT coCaseId, coWard, coAdmission_date, coDischarge_date,
+                          coPrimary_icd10_code, coPrimary_icd10_description_en
+                          FROM tbImportIcd10Data GROUP BY coCaseId) i ON i.coCaseId = c.coId"""
         if ward:
-            rows = db.execute(
-                """SELECT c.coId, c.coCaseIdAlpha, c.coPatientId, c.coGender, c.coAgeYears, c.coIcd,
-                          i.coWard, i.coAdmission_date, i.coDischarge_date,
-                          i.coPrimary_icd10_code, i.coPrimary_icd10_description_en
-                   FROM tbCaseData c
-                   LEFT JOIN (SELECT coCaseId, coWard, coAdmission_date, coDischarge_date,
-                              coPrimary_icd10_code, coPrimary_icd10_description_en
-                              FROM tbImportIcd10Data GROUP BY coCaseId) i ON i.coCaseId = c.coId
-                   WHERE i.coWard = ?
-                   LIMIT ?""",
-                (ward, limit),
-            ).fetchall()
+            rows = db.execute(base_sql + " WHERE i.coWard = ? LIMIT ?", (ward, limit)).fetchall()
         else:
-            rows = db.execute(
-                """SELECT c.coId, c.coCaseIdAlpha, c.coPatientId, c.coGender, c.coAgeYears, c.coIcd,
-                          i.coWard, i.coAdmission_date, i.coDischarge_date,
-                          i.coPrimary_icd10_code, i.coPrimary_icd10_description_en
-                   FROM tbCaseData c
-                   LEFT JOIN (SELECT coCaseId, coWard, coAdmission_date, coDischarge_date,
-                              coPrimary_icd10_code, coPrimary_icd10_description_en
-                              FROM tbImportIcd10Data GROUP BY coCaseId) i ON i.coCaseId = c.coId
-                   LIMIT ?""",
-                (limit,),
-            ).fetchall()
+            rows = db.execute(base_sql + " LIMIT ?", (limit,)).fetchall()
 
         logger.info("Listing patients: %d results", len(rows))
         return [

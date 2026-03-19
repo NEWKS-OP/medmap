@@ -174,8 +174,10 @@ class TestNursingMapping:
         assert "shift" in NURSING_MAPPING
 
     def test_note_text_alias(self):
-        assert "note_text" in NURSING_MAPPING
-        assert NURSING_MAPPING["note_text"] == "coNursing_note_free_text"
+        # note_text is pre-renamed to nursing_note_free_text in mapper.map_nursing()
+        # so it doesn't need to be in NURSING_MAPPING directly
+        assert "nursing_note_free_text" in NURSING_MAPPING
+        assert NURSING_MAPPING["nursing_note_free_text"] == "coNursing_note_free_text"
 
 
 class TestEpacGermanMapping:

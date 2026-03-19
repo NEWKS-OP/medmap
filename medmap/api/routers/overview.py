@@ -23,35 +23,38 @@ async def get_quality_scores() -> list[dict]:
     Returns a list of SourceQualityScore objects."""
     db = get_db()
     try:
-        sources = db.execute(
-            "SELECT DISTINCT source_file FROM tbAuditLog WHERE source_file IS NOT NULL"
+        # Single aggregation query instead of N+1
+        agg_rows = db.execute(
+            """SELECT source_file,
+                      COUNT(*) as total_errors,
+                      SUM(CASE WHEN action_taken = 'QUARANTINE' THEN 1 ELSE 0 END) as quarantined,
+                      SUM(CASE WHEN action_taken = 'AUTO_CORRECT' THEN 1 ELSE 0 END) as auto_corrected
+               FROM tbAuditLog
+               WHERE source_file IS NOT NULL
+               GROUP BY source_file"""
         ).fetchall()
 
+        # Error categories per source
+        cat_rows = db.execute(
+            """SELECT source_file, error_type, COUNT(*) as cnt
+               FROM tbAuditLog
+               WHERE source_file IS NOT NULL
+               GROUP BY source_file, error_type"""
+        ).fetchall()
+        cats_by_source: dict[str, dict] = {}
+        for c in cat_rows:
+            src = c["source_file"]
+            if src not in cats_by_source:
+                cats_by_source[src] = {}
+            cats_by_source[src][c["error_type"]] = c["cnt"]
+
         scores = []
-        for row in sources:
+        for row in agg_rows:
             src = row["source_file"]
+            total_errors = row["total_errors"]
+            quarantined = row["quarantined"]
+            auto_corrected = row["auto_corrected"]
 
-            total_errors = db.execute(
-                "SELECT COUNT(*) as cnt FROM tbAuditLog WHERE source_file = ?", (src,)
-            ).fetchone()["cnt"]
-
-            quarantined = db.execute(
-                "SELECT COUNT(*) as cnt FROM tbAuditLog WHERE source_file = ? AND action_taken = 'QUARANTINE'",
-                (src,),
-            ).fetchone()["cnt"]
-
-            auto_corrected = db.execute(
-                "SELECT COUNT(*) as cnt FROM tbAuditLog WHERE source_file = ? AND action_taken = 'AUTO_CORRECT'",
-                (src,),
-            ).fetchone()["cnt"]
-
-            cats = db.execute(
-                "SELECT error_type, COUNT(*) as cnt FROM tbAuditLog WHERE source_file = ? GROUP BY error_type",
-                (src,),
-            ).fetchall()
-            errors_by_cat = {c["error_type"]: c["cnt"] for c in cats}
-
-            # Score: 100 = perfect, scales with auto-correct ratio vs quarantine
             if total_errors == 0:
                 score = 100
             else:
@@ -64,7 +67,7 @@ async def get_quality_scores() -> list[dict]:
                 "rows_imported": total_errors,
                 "rows_quarantined": quarantined,
                 "values_auto_corrected": auto_corrected,
-                "errors_by_category": errors_by_cat,
+                "errors_by_category": cats_by_source.get(src, {}),
             })
 
         logger.info("Computed quality scores for %d sources", len(scores))

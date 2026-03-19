@@ -742,7 +742,11 @@ class DataMapper:
     # ──────────────────────────────────────────────
 
     def _build_pid_to_caseid_lookup(self, dataframes: dict[str, pd.DataFrame]) -> dict:
-        """Build patient_id -> case_id lookup from sources that have both."""
+        """Build patient_id -> case_id lookup from sources that have both.
+
+        Stores both prefixed and raw (unprefixed) patient_ids so cross-source
+        resolution works even when source prefixes differ (LAB_ vs MOT_).
+        """
         lookup = {}
         for fname, df in dataframes.items():
             if "case_id" not in df.columns or "patient_id" not in df.columns:
@@ -754,8 +758,13 @@ class DataMapper:
             for pid, cid in zip(dedup["patient_id"], dedup["case_id"]):
                 pid_s = str(pid).strip()
                 cid_s = str(cid).strip()
-                if pid_s and cid_s and pid_s not in lookup:
-                    lookup[pid_s] = cid_s
+                if pid_s and cid_s:
+                    if pid_s not in lookup:
+                        lookup[pid_s] = cid_s
+                    # Also store by raw (unprefixed) PID for cross-source matching
+                    raw_pid = re.sub(r'^(LAB|MOT|EPA|MED|NUR|ICD)_', '', pid_s)
+                    if raw_pid != pid_s and raw_pid not in lookup:
+                        lookup[raw_pid] = cid_s
         return lookup
 
     def _resolve_case_ids(self, result: pd.DataFrame,
@@ -765,12 +774,22 @@ class DataMapper:
             return result
         if not pid_lookup:
             return result
-        for idx in result.index:
-            if pd.isna(result.at[idx, "coCaseId"]) or result.at[idx, "coCaseId"] is None:
-                pid = result.at[idx, "coPatient_id"]
-                if pid and pid in pid_lookup:
-                    numeric = self._extract_case_id_numeric(pid_lookup[pid])
-                    result.at[idx, "coCaseId"] = numeric
+        mask = result["coCaseId"].isna()
+        if not mask.any():
+            return result
+
+        def _lookup_pid(pid):
+            if self._safe_isna(pid):
+                return None
+            pid_s = str(pid)
+            case_id = pid_lookup.get(pid_s)
+            if case_id is None:
+                raw_pid = re.sub(r'^(LAB|MOT|EPA|MED|NUR|ICD)_', '', pid_s)
+                case_id = pid_lookup.get(raw_pid)
+            return self._extract_case_id_numeric(case_id) if case_id else None
+
+        resolved = result.loc[mask, "coPatient_id"].apply(_lookup_pid)
+        result.loc[mask, "coCaseId"] = resolved
         return result
 
     def map_all(self, dataframes: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:

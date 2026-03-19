@@ -100,9 +100,9 @@ class TestWhitespaceMissing:
     def test_multiple_spaces_missing(self):
         assert self.cleaner._is_missing_token("   ") is True
 
-    def test_empty_string_not_flagged(self):
-        # Empty string is not flagged (already NaN-like)
-        assert self.cleaner._is_missing_token("") is False
+    def test_empty_string_is_missing(self):
+        # Empty string is treated as a missing value
+        assert self.cleaner._is_missing_token("") is True
 
     def test_none_not_flagged(self):
         assert self.cleaner._is_missing_token(None) is False

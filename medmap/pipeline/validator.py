@@ -290,14 +290,14 @@ class DataValidator:
                             "%d.%m.%Y"
                         )
                     except ValueError:
-                        pass
+                        logger.debug("German month parse failed for: %s", val)
 
         # English textual months via dateutil as last resort
         try:
             from dateutil import parser as dateutil_parser
             return dateutil_parser.parse(val, dayfirst=True)
         except Exception:
-            pass
+            logger.debug("dateutil parse failed for: %s", val)
 
         return None
 
@@ -362,7 +362,7 @@ class DataValidator:
         try:
             return float(s)
         except ValueError:
-            pass
+            logger.debug("Direct float conversion failed for: %s", s)
         # Strip special characters and retry
         cleaned = SPECIAL_CHARS_PATTERN.sub("", s).strip()
         cleaned = cleaned.replace(",", ".")
