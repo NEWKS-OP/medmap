@@ -36,6 +36,10 @@ _PAIN_QUALITATIVE = {
     "severe pain": 8,
     "starke schmerzen": 8,
     "schmerzen": 4,  # generic German "pain"
+    "tolerable pain": 2,
+    "erträgliche schmerzen": 2,
+    "unbearable pain": 9,
+    "unerträgliche schmerzen": 9,
 }
 
 _PAIN_QUAL_RE = re.compile(
@@ -96,6 +100,11 @@ _MOBILITY_KEYWORDS: dict[str, str] = {
     "mobilized": "INDEPENDENT",
     "mobilized to corridor": "INDEPENDENT",
     "mobilized to chair": "INDEPENDENT",
+    "mobilized to bathroom": "INDEPENDENT",
+    "gehfähig": "INDEPENDENT",
+    "crutches": "ASSISTED",
+    "krücken": "ASSISTED",
+    "transfer with help": "ASSISTED",
 }
 
 # Sort by length descending so longer matches take priority
@@ -142,6 +151,11 @@ _WOUND_HEALING_KEYWORDS = [
     "granulierend",
     "good healing",
     "gute heilung",
+    "wound clean",
+    "wunde sauber",
+    "wound dry",
+    "no redness",
+    "keine rötung",
 ]
 
 _WOUND_HEALING_RE = re.compile(
@@ -215,6 +229,14 @@ _DETERIORATION_SIGNS: dict[str, str] = {
     "nausea": "nausea",
     "schwindel": "dizziness",
     "dizziness": "dizziness",
+    "tremor": "tremor",
+    "zittern": "tremor",
+    "fall": "fall_risk",
+    "sturz": "fall_risk",
+    "bleeding": "bleeding",
+    "blutung": "bleeding",
+    "chest pain": "chest_pain",
+    "brustschmerzen": "chest_pain",
 }
 
 _DETERIORATION_SORTED = sorted(_DETERIORATION_SIGNS.items(), key=lambda x: -len(x[0]))
@@ -395,7 +417,7 @@ class NursingNLPAnalyzer:
 
         # Note text
         note_col = None
-        for candidate in ["nursingnote", "nursing_note", "conursing_note_free_text", "note", "notes"]:
+        for candidate in ["nursingnote", "nursing_note", "nursing_note_free_text", "conursing_note_free_text", "note", "notes"]:
             if candidate in cols:
                 note_col = cols[candidate]
                 break

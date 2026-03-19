@@ -38,6 +38,14 @@ def _compute_agent_stats(db: object) -> dict:
             "SELECT COUNT(DISTINCT column_name) as cnt FROM tbAuditLog WHERE action_taken = 'QUARANTINE'"
         ).fetchone()["cnt"]
 
+        # Count nursing notes for NLP stats
+        try:
+            nursing_total = db.execute(
+                "SELECT COUNT(*) as cnt FROM tbImportNursingDailyReportsData"
+            ).fetchone()["cnt"]
+        except Exception:
+            nursing_total = 0
+
         return {
             "total_columns": total_cols,
             "auto_mapped": auto_corrected,
@@ -47,7 +55,7 @@ def _compute_agent_stats(db: object) -> dict:
                 "Schema Detective": {"processed": total_cols, "total": total_cols},
                 "Validation Agent": {"processed": total_cols, "total": total_cols},
                 "Clinical Reasoner": {"processed": auto_corrected, "total": total_cols},
-                "Nursing Analyst": {"processed": flagged, "total": total_cols},
+                "Nursing Analyst": {"processed": nursing_total, "total": nursing_total},
                 "Data Repair": {"processed": quarantined, "total": quarantined or 1},
                 "Supervisor": {"processed": total_cols, "total": total_cols},
             },
@@ -140,3 +148,53 @@ async def get_decisions(limit: int = Query(20, ge=1, le=200, description="Max de
     """Get recent agent decisions, ordered by occurrence count."""
     db = get_db()
     return _get_column_mappings(db, limit=limit)
+
+
+@router.get("/nlp-stats")
+async def get_nlp_stats() -> dict:
+    """Get NLP analysis statistics across all nursing notes in the DB."""
+    db = get_db()
+    try:
+        rows = db.execute(
+            "SELECT coNursing_note_free_text FROM tbImportNursingDailyReportsData WHERE coNursing_note_free_text IS NOT NULL"
+        ).fetchall()
+
+        total = len(rows)
+        pain_count = 0
+        mobility_counts: dict[str, int] = {}
+        wound_count = 0
+        det_count = 0
+        sign_counts: dict[str, int] = {}
+
+        for r in rows:
+            note = r["coNursing_note_free_text"] or ""
+            if not note:
+                continue
+            nlp = analyze_note(note)
+            if nlp["pain_level"] is not None:
+                pain_count += 1
+            if nlp["mobility_status"]:
+                mob = nlp["mobility_status"]
+                mobility_counts[mob] = mobility_counts.get(mob, 0) + 1
+            if nlp["wound_grade"]:
+                wound_count += 1
+            if nlp["deterioration_flag"]:
+                det_count += 1
+                for sign in nlp["deterioration_signs"]:
+                    sign_counts[sign] = sign_counts.get(sign, 0) + 1
+
+        return {
+            "total_notes": total,
+            "pain_extracted": pain_count,
+            "mobility_breakdown": mobility_counts,
+            "wound_extracted": wound_count,
+            "deterioration_flagged": det_count,
+            "top_signs": dict(sorted(sign_counts.items(), key=lambda x: -x[1])[:10]),
+            "extraction_rate_pct": round(
+                (pain_count + sum(mobility_counts.values()) + wound_count + det_count)
+                / max(total * 4, 1) * 100, 1
+            ),
+        }
+    except Exception as e:
+        logger.error("NLP stats error: %s", e)
+        return {"total_notes": 0, "error": str(e)}
