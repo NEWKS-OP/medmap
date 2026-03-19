@@ -191,6 +191,8 @@ def sample_epac_sap_df():
         "EPA0004": [75, 60],
         "EPA0005": [26.0, 22.0],
         "EPA0043": ["Y", "N"],
+        "EPA0014": [1, 0],
+        "EPA0015": [2, 1],
     })
     df.attrs["file_type"] = "epaAC_sap"
     df.attrs["source_file"] = "test_epac_sap.csv"
@@ -355,3 +357,137 @@ class TestMapLabs:
         lab2.attrs["file_type"] = "labs"
         result = mapper.map_labs([sample_labs_df, lab2])
         assert len(result) == 6
+
+
+class TestMapIcd10:
+    def test_maps_columns(self, mapper, sample_icd10_df):
+        result = mapper.map_icd10([sample_icd10_df])
+        assert "coCaseId" in result.columns
+        assert "coPrimary_icd10_code" in result.columns
+        assert len(result) == 2
+
+    def test_case_id_numeric(self, mapper, sample_icd10_df):
+        result = mapper.map_icd10([sample_icd10_df])
+        assert result["coCaseId"].iloc[0] == 1
+
+    def test_icd_code_preserved(self, mapper, sample_icd10_df):
+        result = mapper.map_icd10([sample_icd10_df])
+        assert result["coPrimary_icd10_code"].iloc[0] == "I50.0"
+
+    def test_empty_input(self, mapper):
+        assert mapper.map_icd10([]).empty
+
+
+class TestMapDeviceMotion:
+    def test_maps_columns(self, mapper, sample_device_motion_df):
+        result = mapper.map_device_motion([sample_device_motion_df])
+        assert "coCaseId" in result.columns
+        assert "coMovement_index_0_100" in result.columns
+        assert "coFall_event_0_1" in result.columns
+        assert len(result) == 5
+
+    def test_values_are_strings(self, mapper, sample_device_motion_df):
+        result = mapper.map_device_motion([sample_device_motion_df])
+        assert isinstance(result["coMovement_index_0_100"].iloc[0], str)
+
+    def test_empty_input(self, mapper):
+        assert mapper.map_device_motion([]).empty
+
+
+class TestMapDevice1Hz:
+    def test_maps_columns(self, mapper, sample_device_1hz_df):
+        result = mapper.map_device_1hz([sample_device_1hz_df])
+        assert "coCaseId" in result.columns
+        assert "coAccel_x_m_s2" in result.columns
+        assert len(result) == 3
+
+    def test_pressure_zones(self, mapper, sample_device_1hz_df):
+        result = mapper.map_device_1hz([sample_device_1hz_df])
+        assert "coPressure_zone1_0_100" in result.columns
+        assert "coPressure_zone4_0_100" in result.columns
+
+    def test_empty_input(self, mapper):
+        assert mapper.map_device_1hz([]).empty
+
+
+class TestMapMedication:
+    def test_maps_columns(self, mapper, sample_medication_df):
+        result = mapper.map_medication([sample_medication_df])
+        assert "coCaseId" in result.columns
+        assert "coMedication_name" in result.columns
+        assert len(result) == 3
+
+    def test_record_type_renamed(self, mapper):
+        df = pd.DataFrame({
+            "case_id": ["CASE-0001"],
+            "patient_id": ["MED_1"],
+            "event_type": ["ORDER"],
+            "medication_name": ["Aspirin"],
+        })
+        df.attrs["file_type"] = "medication"
+        result = mapper.map_medication([df])
+        assert "coRecord_type" in result.columns
+
+    def test_empty_input(self, mapper):
+        assert mapper.map_medication([]).empty
+
+
+class TestMapNursing:
+    def test_maps_columns(self, mapper, sample_nursing_df):
+        result = mapper.map_nursing([sample_nursing_df])
+        assert "coCaseId" in result.columns
+        assert "coShift" in result.columns
+        assert len(result) == 2
+
+    def test_truncates_long_notes(self, mapper, sample_nursing_df):
+        result = mapper.map_nursing([sample_nursing_df])
+        note = result["coNursing_note_free_text"].iloc[1]
+        assert len(note) <= 256
+
+    def test_short_notes_preserved(self, mapper, sample_nursing_df):
+        result = mapper.map_nursing([sample_nursing_df])
+        note = result["coNursing_note_free_text"].iloc[0]
+        assert "Pain level 2/10" in note
+
+    def test_empty_input(self, mapper):
+        assert mapper.map_nursing([]).empty
+
+
+# ──────────────────────────────────────────────
+# epaAC FORMAT DETECTION TESTS
+# ──────────────────────────────────────────────
+
+class TestDetectEpacFormat:
+    def test_detects_sap(self, mapper, sample_epac_sap_df):
+        assert mapper._detect_epac_format(sample_epac_sap_df) == "SAP_CODES"
+
+    def test_detects_german(self, mapper, sample_epac_german_df):
+        assert mapper._detect_epac_format(sample_epac_german_df) == "GERMAN_TEXT"
+
+    def test_detects_pivot(self, mapper, sample_epac_pivot_df):
+        assert mapper._detect_epac_format(sample_epac_pivot_df) == "PIVOT"
+
+    def test_unknown_format(self, mapper):
+        df = pd.DataFrame({"col_a": [1], "col_b": [2]})
+        assert mapper._detect_epac_format(df) == "UNKNOWN"
+
+
+class TestDecodeSapColumns:
+    def test_renames_epa_to_iid(self, mapper, sample_epac_sap_df):
+        result = mapper._decode_sap_columns(sample_epac_sap_df)
+        # EPA0001 -> E0_I_001
+        assert "E0_I_001" in result.columns
+        assert "EPA0001" not in result.columns
+
+    def test_renames_patfal_to_case_id(self, mapper, sample_epac_sap_df):
+        result = mapper._decode_sap_columns(sample_epac_sap_df)
+        assert "case_id" in result.columns
+        assert "PATFAL" not in result.columns
+
+    def test_renames_patfoe_to_patient_id(self, mapper, sample_epac_sap_df):
+        result = mapper._decode_sap_columns(sample_epac_sap_df)
+        assert "patient_id" in result.columns
+
+    def test_preserves_row_count(self, mapper, sample_epac_sap_df):
+        result = mapper._decode_sap_columns(sample_epac_sap_df)
+        assert len(result) == 2

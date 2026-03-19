@@ -191,6 +191,11 @@ class DataMapper:
         if result.empty:
             return result
 
+        # Per spec: coCaseId ← patient_id for device data
+        if "coPatient_id" in result.columns:
+            if "coCaseId" not in result.columns or result["coCaseId"].isna().all():
+                result["coCaseId"] = result["coPatient_id"]
+
         result = self._convert_case_id_column(result)
         result = self._to_string_columns(result, exclude={"coCaseId"})
 
@@ -209,6 +214,11 @@ class DataMapper:
         )
         if result.empty:
             return result
+
+        # Per spec: coCaseId ← patient_id for device data
+        if "coPatient_id" in result.columns:
+            if "coCaseId" not in result.columns or result["coCaseId"].isna().all():
+                result["coCaseId"] = result["coPatient_id"]
 
         result = self._convert_case_id_column(result)
         result = self._to_string_columns(result, exclude={"coCaseId"})
@@ -233,6 +243,14 @@ class DataMapper:
         if result.empty:
             return result
 
+        # Medication data often lacks case_id; fall back to patient_id or encounter_id
+        needs_fallback = "coCaseId" not in result.columns or result["coCaseId"].isna().all()
+        if needs_fallback:
+            if "coPatient_id" in result.columns:
+                result["coCaseId"] = result["coPatient_id"]
+            elif "coEncounter_id" in result.columns:
+                result["coCaseId"] = result["coEncounter_id"]
+
         result = self._convert_case_id_column(result)
         result = self._to_string_columns(result, exclude={"coCaseId"})
 
@@ -246,11 +264,20 @@ class DataMapper:
         if merged.empty:
             return pd.DataFrame()
 
+        # Also map note_text -> nursing_note_free_text if present
+        if "note_text" in merged.columns and "nursing_note_free_text" not in merged.columns:
+            merged = merged.rename(columns={"note_text": "nursing_note_free_text"})
+
         result = self._apply_column_mapping(
             merged, NURSING_MAPPING, "tbImportNursingDailyReportsData"
         )
         if result.empty:
             return result
+
+        # Fall back to patient_id for coCaseId if missing or all-null
+        if "coPatient_id" in result.columns:
+            if "coCaseId" not in result.columns or result["coCaseId"].isna().all():
+                result["coCaseId"] = result["coPatient_id"]
 
         result = self._convert_case_id_column(result)
 
@@ -338,11 +365,17 @@ class DataMapper:
     def _normalize_epac_german(self, df: pd.DataFrame) -> pd.DataFrame:
         """Normalize German epaAC column names to internal standard."""
         rename_map = {}
+        seen_targets = set()
         for col in df.columns:
             if col in EPAC_GERMAN_MAPPING:
-                rename_map[col] = EPAC_GERMAN_MAPPING[col]
+                target = EPAC_GERMAN_MAPPING[col]
+                if target not in seen_targets:
+                    rename_map[col] = target
+                    seen_targets.add(target)
         if rename_map:
             df = df.rename(columns=rename_map)
+        # Drop duplicate columns (keep first)
+        df = df.loc[:, ~df.columns.duplicated()]
         return df
 
     def _unpivot_epac(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -399,34 +432,35 @@ class DataMapper:
 
     def _map_epac_to_target(self, df: pd.DataFrame) -> pd.DataFrame:
         """Map epaAC DataFrame columns to tbImportAcData target columns."""
+        # Deduplicate df columns first
+        df = df.loc[:, ~df.columns.duplicated()]
+        n = len(df)
+
         # Build column mapping dict first, then construct DataFrame at once
         col_map = {}
 
         # Extract case_id
         for col in ["case_id", "FallID", "PATFAL"]:
             if col in df.columns:
-                col_map["coCaseId"] = df[col].apply(self._extract_case_id_numeric)
+                col_map["coCaseId"] = df[col].apply(self._extract_case_id_numeric).values
                 break
 
         # Map columns that match target schema pattern (E0_I_XXX -> coE0IXXX)
-        # SQL schema uses exact digit count from IID (no padding): E0_I_001 -> coE0I001
-        # Deduplicate df columns first
-        df = df.loc[:, ~df.columns.duplicated()]
         for col in df.columns:
             m = re.match(r'^(E\d+)_I_(\d+)$', col)
             if m:
                 target = f"co{m.group(1)}I{m.group(2)}"
                 if target not in col_map:
-                    col_map[target] = df[col]
+                    col_map[target] = df[col].values
                 continue
             if col.startswith("co") and col not in col_map:
-                col_map[col] = df[col]
+                col_map[col] = df[col].values
 
         # Map known German columns to target
         german_to_target = {
             "height": "coE0I005",
             "weight": "coE0I004",
-            "bmi": "coE0I005",
+            "bmi": "coE0I006",
             "admission_date": "coE2I223",
             "discharge_date": "coE2I228",
             "age_years": "coE2I224",
@@ -435,7 +469,7 @@ class DataMapper:
         }
         for src, tgt in german_to_target.items():
             if src in df.columns and tgt not in col_map:
-                col_map[tgt] = df[src]
+                col_map[tgt] = df[src].values
 
         # Add coCaseIdAlpha for string case_id
         for col in ["case_id", "FallID", "PATFAL"]:
@@ -443,19 +477,22 @@ class DataMapper:
                 col_map["coCaseIdAlpha"] = df[col].apply(
                     lambda v: str(v).strip() if v is not None and not (
                         isinstance(v, float) and np.isnan(v)) else None
-                )
+                ).values
                 break
 
         if not col_map or "coCaseId" not in col_map:
             self.mapping_warnings.append("epaAC mapping produced no valid rows")
             return pd.DataFrame()
 
-        # Use .values to avoid index mismatch issues between Series
-        n = len(list(col_map.values())[0])
-        result = pd.DataFrame(
-            {k: v.values if hasattr(v, 'values') else v for k, v in col_map.items()},
-            index=range(n),
-        )
+        # Filter out any arrays that don't match expected length
+        valid_map = {}
+        for k, v in col_map.items():
+            if hasattr(v, '__len__') and len(v) == n:
+                valid_map[k] = v
+            elif not hasattr(v, '__len__'):
+                valid_map[k] = v
+
+        result = pd.DataFrame(valid_map, index=range(n))
         return result
 
     def map_epac(self, dfs: list[pd.DataFrame]) -> pd.DataFrame:

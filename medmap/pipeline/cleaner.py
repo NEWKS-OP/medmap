@@ -402,6 +402,10 @@ class DataCleaner:
         if not prefix or "patient_id" not in df.columns:
             return df
 
+        # Convert column to object dtype to avoid FutureWarning when
+        # inserting string values into a numeric column
+        df["patient_id"] = df["patient_id"].astype(object)
+
         for idx in df.index:
             val = df.at[idx, "patient_id"]
             if pd.isna(val) if isinstance(val, float) else val is None:
