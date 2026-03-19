@@ -192,3 +192,355 @@ class TestTryParseNumeric:
 
     def test_none_value(self, cleaner):
         assert cleaner._try_parse_numeric(None) is None
+
+
+class TestCleanClinicalNumerics:
+    def test_valid_value_preserved(self, cleaner):
+        df = make_df({"sodium_mmol_L": [140.0]})
+        result = cleaner._clean_clinical_numerics(df, "test.csv", "labs")
+        assert result.at[0, "sodium_mmol_L"] == 140.0
+
+    def test_outlier_quarantined(self, cleaner):
+        df = make_df({"sodium_mmol_L": [999.0]})
+        result = cleaner._clean_clinical_numerics(df, "test.csv", "labs")
+        assert pd.isna(result.at[0, "sodium_mmol_L"])
+
+    def test_low_outlier_quarantined(self, cleaner):
+        df = make_df({"sodium_mmol_L": [10.0]})
+        result = cleaner._clean_clinical_numerics(df, "test.csv", "labs")
+        assert pd.isna(result.at[0, "sodium_mmol_L"])
+
+    def test_special_chars_stripped(self, cleaner):
+        df = make_df({"sodium_mmol_L": ["13ü0"]})
+        result = cleaner._clean_clinical_numerics(df, "test.csv", "labs")
+        assert result.at[0, "sodium_mmol_L"] == 130.0
+
+    def test_raw_column_created(self, cleaner):
+        df = make_df({"sodium_mmol_L": [140.0]})
+        result = cleaner._clean_clinical_numerics(df, "test.csv", "labs")
+        assert "sodium_mmol_L_raw" in result.columns
+
+    def test_non_numeric_quarantined(self, cleaner):
+        df = make_df({"sodium_mmol_L": ["abc"]})
+        result = cleaner._clean_clinical_numerics(df, "test.csv", "labs")
+        assert pd.isna(result.at[0, "sodium_mmol_L"])
+
+
+class TestNormalizeGender:
+    def test_male_normalized(self, cleaner):
+        df = make_df({"sex": ["male"]})
+        result = cleaner._normalize_gender(df, "test.csv", "labs")
+        assert result.at[0, "sex"] == "M"
+
+    def test_female_normalized(self, cleaner):
+        df = make_df({"sex": ["female"]})
+        result = cleaner._normalize_gender(df, "test.csv", "labs")
+        assert result.at[0, "sex"] == "F"
+
+    def test_german_male(self, cleaner):
+        df = make_df({"sex": ["männlich"]})
+        result = cleaner._normalize_gender(df, "test.csv", "labs")
+        assert result.at[0, "sex"] == "M"
+
+    def test_german_female(self, cleaner):
+        df = make_df({"sex": ["weiblich"]})
+        result = cleaner._normalize_gender(df, "test.csv", "labs")
+        assert result.at[0, "sex"] == "F"
+
+    def test_abbreviation_m(self, cleaner):
+        df = make_df({"sex": ["m"]})
+        result = cleaner._normalize_gender(df, "test.csv", "labs")
+        assert result.at[0, "sex"] == "M"
+
+    def test_abbreviation_f(self, cleaner):
+        df = make_df({"sex": ["f"]})
+        result = cleaner._normalize_gender(df, "test.csv", "labs")
+        assert result.at[0, "sex"] == "F"
+
+    def test_already_normalized(self, cleaner):
+        df = make_df({"sex": ["M"]})
+        result = cleaner._normalize_gender(df, "test.csv", "labs")
+        assert result.at[0, "sex"] == "M"
+
+    def test_nan_preserved(self, cleaner):
+        df = make_df({"sex": [np.nan]})
+        result = cleaner._normalize_gender(df, "test.csv", "labs")
+        assert pd.isna(result.at[0, "sex"])
+
+
+class TestCleanIds:
+    def test_strips_whitespace(self, cleaner):
+        df = make_df({"case_id": [" CASE-001 "]})
+        result = cleaner._clean_ids(df, "test.csv", "labs")
+        assert result.at[0, "case_id"] == "CASE-001"
+
+    def test_strips_tabs(self, cleaner):
+        df = make_df({"case_id": ["\tCASE-001"]})
+        result = cleaner._clean_ids(df, "test.csv", "labs")
+        assert result.at[0, "case_id"] == "CASE-001"
+
+    def test_strips_newlines(self, cleaner):
+        df = make_df({"case_id": ["CASE-001\n"]})
+        result = cleaner._clean_ids(df, "test.csv", "labs")
+        assert result.at[0, "case_id"] == "CASE-001"
+
+    def test_strips_leading_special_chars(self, cleaner):
+        df = make_df({"case_id": ["#CASE-001"]})
+        result = cleaner._clean_ids(df, "test.csv", "labs")
+        assert result.at[0, "case_id"] == "CASE-001"
+
+    def test_preserves_valid_id(self, cleaner):
+        df = make_df({"case_id": ["CASE-0042"]})
+        result = cleaner._clean_ids(df, "test.csv", "labs")
+        assert result.at[0, "case_id"] == "CASE-0042"
+
+    def test_cleans_patient_id(self, cleaner):
+        df = make_df({"patient_id": [" 123456 "]})
+        result = cleaner._clean_ids(df, "test.csv", "labs")
+        assert result.at[0, "patient_id"] == "123456"
+
+
+class TestAddPidPrefix:
+    def test_adds_lab_prefix(self, cleaner):
+        df = make_df({"patient_id": ["100001"]})
+        result = cleaner._add_pid_prefix(df, "test.csv", "labs")
+        assert result.at[0, "patient_id"] == "LAB_100001"
+
+    def test_adds_mot_prefix(self, cleaner):
+        df = make_df({"patient_id": ["200001"]}, file_type="device_motion")
+        result = cleaner._add_pid_prefix(df, "test.csv", "device_motion")
+        assert result.at[0, "patient_id"] == "MOT_200001"
+
+    def test_adds_epa_prefix(self, cleaner):
+        df = make_df({"patient_id": ["300001"]}, file_type="epaAC_german")
+        result = cleaner._add_pid_prefix(df, "test.csv", "epaAC_german")
+        assert result.at[0, "patient_id"] == "EPA_300001"
+
+    def test_adds_med_prefix(self, cleaner):
+        df = make_df({"patient_id": ["400001"]}, file_type="medication")
+        result = cleaner._add_pid_prefix(df, "test.csv", "medication")
+        assert result.at[0, "patient_id"] == "MED_400001"
+
+    def test_adds_nur_prefix(self, cleaner):
+        df = make_df({"patient_id": ["500001"]}, file_type="nursing")
+        result = cleaner._add_pid_prefix(df, "test.csv", "nursing")
+        assert result.at[0, "patient_id"] == "NUR_500001"
+
+    def test_adds_icd_prefix(self, cleaner):
+        df = make_df({"patient_id": ["600001"]}, file_type="icd10_ops")
+        result = cleaner._add_pid_prefix(df, "test.csv", "icd10_ops")
+        assert result.at[0, "patient_id"] == "ICD_600001"
+
+    def test_no_double_prefix(self, cleaner):
+        df = make_df({"patient_id": ["LAB_100001"]})
+        result = cleaner._add_pid_prefix(df, "test.csv", "labs")
+        assert result.at[0, "patient_id"] == "LAB_100001"
+
+    def test_no_cross_prefix(self, cleaner):
+        df = make_df({"patient_id": ["MOT_100001"]})
+        result = cleaner._add_pid_prefix(df, "test.csv", "labs")
+        assert result.at[0, "patient_id"] == "MOT_100001"
+
+    def test_nan_preserved(self, cleaner):
+        df = make_df({"patient_id": [np.nan]})
+        result = cleaner._add_pid_prefix(df, "test.csv", "labs")
+        assert pd.isna(result.at[0, "patient_id"])
+
+
+class TestRemoveDuplicates:
+    def test_removes_exact_duplicates(self, cleaner):
+        df = make_df({"val": [1, 2, 1], "id": ["a", "b", "a"]})
+        result = cleaner._remove_duplicates(df, "test.csv", "labs")
+        assert len(result) == 2
+
+    def test_keeps_first_occurrence(self, cleaner):
+        df = make_df({"val": [1, 1], "id": ["a", "a"]})
+        result = cleaner._remove_duplicates(df, "test.csv", "labs")
+        assert len(result) == 1
+        assert result.at[0, "val"] == 1
+
+    def test_no_duplicates_unchanged(self, cleaner):
+        df = make_df({"val": [1, 2, 3]})
+        result = cleaner._remove_duplicates(df, "test.csv", "labs")
+        assert len(result) == 3
+
+    def test_motion_partial_duplicates(self, cleaner):
+        df = make_df({
+            "patient_id": ["P1", "P1", "P2"],
+            "timestamp": ["2025-01-01", "2025-01-01", "2025-01-01"],
+            "movement_index_0_100": [50, 60, 70],
+        }, file_type="device_motion")
+        result = cleaner._remove_duplicates(df, "test.csv", "device_motion")
+        assert len(result) == 2
+
+
+class TestNormalizeLabFlags:
+    def test_uppercase_h(self, cleaner):
+        df = make_df({"sodium_flag": ["h"]})
+        result = cleaner._normalize_lab_flags(df, "test.csv", "labs")
+        assert result.at[0, "sodium_flag"] == "H"
+
+    def test_uppercase_l(self, cleaner):
+        df = make_df({"sodium_flag": ["l"]})
+        result = cleaner._normalize_lab_flags(df, "test.csv", "labs")
+        assert result.at[0, "sodium_flag"] == "L"
+
+    def test_strips_whitespace(self, cleaner):
+        df = make_df({"sodium_flag": [" H "]})
+        result = cleaner._normalize_lab_flags(df, "test.csv", "labs")
+        assert result.at[0, "sodium_flag"] == "H"
+
+    def test_invalid_flag_quarantined(self, cleaner):
+        df = make_df({"sodium_flag": ["INVALID"]})
+        result = cleaner._normalize_lab_flags(df, "test.csv", "labs")
+        assert pd.isna(result.at[0, "sodium_flag"])
+
+    def test_skips_non_labs(self, cleaner):
+        df = make_df({"sodium_flag": ["INVALID"]}, file_type="medication")
+        result = cleaner._normalize_lab_flags(df, "test.csv", "medication")
+        assert result.at[0, "sodium_flag"] == "INVALID"
+
+    def test_hh_preserved(self, cleaner):
+        df = make_df({"sodium_flag": ["HH"]})
+        result = cleaner._normalize_lab_flags(df, "test.csv", "labs")
+        assert result.at[0, "sodium_flag"] == "HH"
+
+    def test_ll_preserved(self, cleaner):
+        df = make_df({"sodium_flag": ["LL"]})
+        result = cleaner._normalize_lab_flags(df, "test.csv", "labs")
+        assert result.at[0, "sodium_flag"] == "LL"
+
+
+class TestExtractCaseId:
+    def test_from_case_id_column(self, cleaner):
+        df = make_df({"case_id": ["CASE-001"]})
+        assert cleaner._extract_case_id(df, 0) == "CASE-001"
+
+    def test_from_patient_id_fallback(self, cleaner):
+        df = make_df({"patient_id": ["PAT-100"]})
+        assert cleaner._extract_case_id(df, 0) == "PAT-100"
+
+    def test_from_index_fallback(self, cleaner):
+        df = make_df({"val": [1]})
+        assert cleaner._extract_case_id(df, 0) == "row_0"
+
+
+class TestTableForType:
+    def test_labs(self, cleaner):
+        assert cleaner._table_for_type("labs") == "tbImportLabsData"
+
+    def test_icd10(self, cleaner):
+        assert cleaner._table_for_type("icd10_ops") == "tbImportIcd10Data"
+
+    def test_device_motion(self, cleaner):
+        assert cleaner._table_for_type("device_motion") == "tbImportDeviceMotionData"
+
+    def test_device_1hz(self, cleaner):
+        assert cleaner._table_for_type("device_1hz") == "tbImportDevice1HzMotionData"
+
+    def test_medication(self, cleaner):
+        assert cleaner._table_for_type("medication") == "tbImportMedicationInpatientData"
+
+    def test_nursing(self, cleaner):
+        assert cleaner._table_for_type("nursing") == "tbImportNursingDailyReportsData"
+
+    def test_epac_german(self, cleaner):
+        assert cleaner._table_for_type("epaAC_german") == "tbImportAcData"
+
+    def test_epac_sap(self, cleaner):
+        assert cleaner._table_for_type("epaAC_sap") == "tbImportAcData"
+
+    def test_epac_pivot(self, cleaner):
+        assert cleaner._table_for_type("epaAC_pivot") == "tbImportAcData"
+
+    def test_unknown(self, cleaner):
+        assert cleaner._table_for_type("unknown") == "unknown"
+
+
+class TestBuildCaseIdLookup:
+    def test_builds_lookup(self, cleaner):
+        df = make_df({
+            "case_id": ["CASE-001", "CASE-002"],
+            "patient_id": ["P1", "P2"],
+            "specimen_datetime": ["2025-01-15", "2025-02-20"],
+        })
+        lookup = cleaner.build_case_id_lookup({"labs.csv": df})
+        assert ("P1", "2025-01-15") in lookup
+        assert lookup[("P1", "2025-01-15")] == "CASE-001"
+
+    def test_patient_id_fallback(self, cleaner):
+        df = make_df({
+            "case_id": ["CASE-001"],
+            "patient_id": ["P1"],
+        })
+        lookup = cleaner.build_case_id_lookup({"labs.csv": df})
+        assert "P1" in lookup
+
+    def test_empty_dataframes(self, cleaner):
+        lookup = cleaner.build_case_id_lookup({})
+        assert lookup == {}
+
+    def test_skips_missing_case_id(self, cleaner):
+        df = make_df({
+            "patient_id": ["P1"],
+            "val": [1],
+        })
+        lookup = cleaner.build_case_id_lookup({"motion.csv": df})
+        assert len(lookup) == 0
+
+
+class TestMapMissingCaseIds:
+    def test_maps_from_lookup(self, cleaner):
+        df1 = make_df({
+            "case_id": ["CASE-001"],
+            "patient_id": ["P1"],
+            "specimen_datetime": ["2025-01-15"],
+        })
+        df2 = make_df({"patient_id": ["P1"], "val": [1]}, file_type="device_motion")
+        result = cleaner.map_missing_case_ids({"labs.csv": df1, "motion.csv": df2})
+        assert "case_id" in result["motion.csv"].columns
+
+    def test_preserves_existing_case_ids(self, cleaner):
+        df = make_df({
+            "case_id": ["CASE-001"],
+            "patient_id": ["P1"],
+        })
+        result = cleaner.map_missing_case_ids({"labs.csv": df})
+        assert result["labs.csv"].at[0, "case_id"] == "CASE-001"
+
+
+class TestCleanDataframe:
+    def test_returns_cleaned_copy(self, cleaner):
+        df = make_df({
+            "case_id": ["CASE-001"],
+            "patient_id": ["100001"],
+            "sex": ["male"],
+            "sodium_mmol_L": [140.0],
+        })
+        result = cleaner.clean_dataframe(df, "test.csv")
+        assert result.at[0, "sex"] == "M"
+        assert result.at[0, "patient_id"].startswith("LAB_")
+
+    def test_preserves_attrs(self, cleaner):
+        df = make_df({"val": [1]})
+        result = cleaner.clean_dataframe(df, "test.csv")
+        assert result.attrs["file_type"] == "labs"
+
+    def test_clean_all(self, cleaner):
+        df1 = make_df({"val": [1]})
+        df2 = make_df({"val": [2]}, file_type="medication")
+        result = cleaner.clean_all({"f1.csv": df1, "f2.csv": df2})
+        assert "f1.csv" in result
+        assert "f2.csv" in result
+
+
+class TestGetAuditLog:
+    def test_returns_audit_log(self, cleaner_with_validator):
+        df = make_df({"sodium_mmol_L": ["N/A"]})
+        cleaner_with_validator.clean_dataframe(df, "test.csv")
+        log = cleaner_with_validator.get_audit_log()
+        assert len(log) > 0
+
+    def test_returns_quality_scores(self, cleaner_with_validator):
+        scores = cleaner_with_validator.get_quality_scores()
+        assert isinstance(scores, dict)
