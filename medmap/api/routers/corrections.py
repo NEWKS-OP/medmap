@@ -166,5 +166,5 @@ async def rollback_correction(body: dict = Body(default={})) -> dict:
 
 @router.get("/history")
 async def get_history() -> list[dict]:
-    """Get correction history."""
+    """Get the full history of applied corrections and rollbacks."""
     return get_correction_history_list()

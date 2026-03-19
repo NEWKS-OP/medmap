@@ -22,7 +22,10 @@ router = APIRouter(responses={200: {"description": "Success"}})
 
 
 def _run_pipeline_thread(data_folder: str):
-    """Run the pipeline in a background thread."""
+    """Run the full data pipeline in a background thread.
+
+    Calls the orchestrator and updates shared state as it progresses.
+    """
     try:
         from pipeline.agents.orchestrator import PipelineOrchestrator
 
@@ -55,7 +58,9 @@ def _run_pipeline_thread(data_folder: str):
 
 @router.post("/start")
 async def start_pipeline(body: dict = Body(default={"data_folder": "dirty"})):
-    """Launch the pipeline in background."""
+    """Launch the data pipeline in a background thread.
+
+    Accepts data_folder as 'clean' or 'dirty'."""
     if pipeline_state.is_running:
         logger.warning("Pipeline start rejected - already running")
         return {

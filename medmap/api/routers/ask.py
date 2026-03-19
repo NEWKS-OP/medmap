@@ -108,5 +108,5 @@ async def ask_data(body: dict = Body(default={"question": ""})):
 
 @router.get("/history")
 async def get_history() -> list[dict]:
-    """Get ask-your-data query history."""
+    """Get ask-your-data query history, most recent first."""
     return get_ask_history_list()

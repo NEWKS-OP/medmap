@@ -13,7 +13,7 @@ from contracts import (
     PipelineProgress, PipelineStatus, PipelineStats, StreamingProgress,
 )
 
-# ── Database connection ──────────────────────────────
+# ── Database connection (singleton, thread-safe) ──────
 
 _conn = None
 _lock = threading.Lock()
@@ -43,10 +43,13 @@ def close_db():
             _conn = None
 
 
-# ── Pipeline state (shared across threads) ──────────
+# ── Pipeline state (singleton, thread-safe) ──────────
 
 class PipelineState:
-    """Thread-safe pipeline execution state."""
+    """Thread-safe pipeline execution state.
+
+    Tracks progress, stats, and streaming state for the pipeline.
+    """
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -92,7 +95,7 @@ class PipelineState:
 pipeline_state = PipelineState()
 
 
-# ── Ask Your Data history ────────────────────────────
+# ── Ask Your Data history (in-memory, thread-safe) ───
 
 _ask_history: list[dict] = []
 _ask_lock = threading.Lock()
@@ -108,7 +111,7 @@ def get_ask_history_list() -> list[dict]:
         return list(_ask_history)
 
 
-# ── Correction history ───────────────────────────────
+# ── Correction history (in-memory, thread-safe) ──────
 
 _correction_history: list[dict] = []
 _correction_lock = threading.Lock()
@@ -124,7 +127,7 @@ def get_correction_history_list() -> list[dict]:
         return list(_correction_history)
 
 
-# ── Helper to convert sqlite3.Row to dict ────────────
+# ── Helper utilities ─────────────────────────────────
 
 def rows_to_dicts(rows: list[object]) -> list[dict]:
     """Convert a list of sqlite3.Row objects to a list of dicts."""
