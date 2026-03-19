@@ -93,13 +93,13 @@ async def start_pipeline(body: dict = Body(default={"data_folder": "dirty"})):
 
 @router.get("/progress")
 async def get_progress() -> dict:
-    """Get current pipeline progress."""
+    """Get current pipeline progress status and step information."""
     return asdict(pipeline_state.get_progress())
 
 
 @router.get("/stats")
 async def get_stats() -> dict:
-    """Get pipeline stats after completion."""
+    """Get pipeline statistics after completion including error counts."""
     stats = pipeline_state.get_stats()
     if stats is None:
         return {
@@ -114,5 +114,5 @@ async def get_stats() -> dict:
 
 @router.get("/streaming-progress")
 async def get_streaming_progress() -> dict:
-    """Get 1Hz streaming progress."""
+    """Get 1Hz device data streaming progress during pipeline execution."""
     return asdict(pipeline_state.get_streaming())

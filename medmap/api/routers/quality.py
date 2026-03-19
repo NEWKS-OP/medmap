@@ -6,6 +6,7 @@ GET  /api/quality/completeness
 """
 
 import logging
+from typing import Any
 from fastapi import APIRouter, Query
 
 from api.dependencies import get_db, rows_to_dicts
@@ -97,6 +98,7 @@ async def get_completeness() -> dict:
     Returns table_name -> column_name -> percentage complete."""
     db = get_db()
     try:
+        # All import tables to check completeness for
         tables = [
             "tbImportLabsData",
             "tbImportIcd10Data",

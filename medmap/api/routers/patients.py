@@ -11,6 +11,7 @@ GET  /api/patients/{case_id}/passports
 """
 
 import logging
+from typing import Any, Optional
 from datetime import datetime
 from fastapi import APIRouter, Query
 

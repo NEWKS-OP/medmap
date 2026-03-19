@@ -6,6 +6,7 @@ POST /api/overview/generate-report
 """
 
 import logging
+from typing import Any
 from fastapi import APIRouter
 
 from api.dependencies import get_db, rows_to_dicts

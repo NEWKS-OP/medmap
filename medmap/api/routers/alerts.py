@@ -16,11 +16,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(responses={200: {"description": "Alerts data"}})
 
-# In-memory alert store (populated from audit log on first access)
-_alerts_cache: Optional[list] = None
+# In-memory alert store (populated from audit log on first access, cached)
+_alerts_cache: list[dict] | None = None
 
 
-def _build_alerts(db) -> list[dict]:
+def _build_alerts(db: object) -> list[dict]:
     """Build clinical alerts from cross-source audit log entries."""
     alerts = []
 

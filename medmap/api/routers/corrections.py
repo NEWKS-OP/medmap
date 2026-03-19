@@ -7,6 +7,7 @@ GET  /api/corrections/history
 """
 
 import logging
+from typing import Any
 from datetime import datetime
 from fastapi import APIRouter, Body
 
