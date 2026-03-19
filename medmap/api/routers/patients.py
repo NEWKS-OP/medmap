@@ -53,7 +53,7 @@ def _build_patient_summary(db: object, case: object) -> dict:
 
 @router.get("")
 async def list_patients(ward: str = Query(None, description="Filter by ward name"), limit: int = Query(50, ge=1, le=500, description="Max results")):
-    """List patients with optional ward filter."""
+    """List patients with optional ward filter and pagination."""
     db = get_db()
     try:
         if ward:
@@ -106,7 +106,7 @@ async def list_patients(ward: str = Query(None, description="Filter by ward name
 
 @router.get("/{case_id}")
 async def get_patient(case_id: str) -> dict:
-    """Get patient summary."""
+    """Get detailed patient summary including demographics and ICD data."""
     db = get_db()
     try:
         case = _find_case(db, case_id)
@@ -140,7 +140,7 @@ LAB_PARAMS = [
 
 @router.get("/{case_id}/labs")
 async def get_patient_labs(case_id: str) -> list[dict]:
-    """Get lab results for a patient."""
+    """Get lab results for a patient across 15 parameters."""
     db = get_db()
     try:
         case = _find_case(db, case_id)
@@ -242,7 +242,7 @@ async def get_patient_timeline(case_id: str) -> list[dict]:
 
 @router.get("/{case_id}/medications")
 async def get_patient_medications(case_id: str) -> list[dict]:
-    """Get medication events for a patient."""
+    """Get medication events for a patient including orders, changes, and administrations."""
     db = get_db()
     try:
         case = _find_case(db, case_id)
@@ -287,7 +287,7 @@ async def get_patient_medications(case_id: str) -> list[dict]:
 
 @router.get("/{case_id}/nursing")
 async def get_patient_nursing(case_id: str) -> list[dict]:
-    """Get nursing reports for a patient."""
+    """Get nursing reports for a patient with shift and date information."""
     db = get_db()
     try:
         case = _find_case(db, case_id)
@@ -409,7 +409,7 @@ async def get_patient_convergence(case_id: str) -> dict:
 
 @router.get("/{case_id}/passports")
 async def get_patient_passports(case_id: str) -> list[dict]:
-    """Get data passports for a patient."""
+    """Get data passports (data lineage records) for a patient."""
     db = get_db()
     try:
         rows = db.execute(

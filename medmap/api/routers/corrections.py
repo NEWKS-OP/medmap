@@ -22,7 +22,7 @@ router = APIRouter(responses={200: {"description": "Correction results"}})
 
 @router.get("/pending")
 async def get_pending_corrections() -> list[dict]:
-    """Get data passports pending review."""
+    """Get data passports that are pending manual review."""
     db = get_db()
     try:
         rows = db.execute(

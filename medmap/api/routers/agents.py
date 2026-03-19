@@ -111,7 +111,7 @@ def _get_column_mappings(db: object, badge: str = None, source: str = None, stat
 
 @router.get("/stats")
 async def get_agent_stats() -> dict:
-    """Get agent statistics."""
+    """Get agent statistics including column counts and progress."""
     db = get_db()
     return _compute_agent_stats(db)
 
@@ -122,13 +122,13 @@ async def get_mappings(
     source: str = Query(None, description="Filter by source file"),
     status: str = Query(None, description="Filter by mapping status"),
 ):
-    """Get column mappings with optional filters."""
+    """Get column mappings with optional badge, source, and status filters."""
     db = get_db()
     return _get_column_mappings(db, badge=badge, source=source, status=status)
 
 
 @router.get("/decisions")
 async def get_decisions(limit: int = Query(20, ge=1, le=200, description="Max decisions to return")):
-    """Get recent agent decisions."""
+    """Get recent agent decisions, ordered by occurrence count."""
     db = get_db()
     return _get_column_mappings(db, limit=limit)
