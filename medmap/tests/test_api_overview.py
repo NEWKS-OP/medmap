@@ -45,5 +45,36 @@ class TestWardScoresEndpoint:
         assert isinstance(data, list)
 
 
+class TestSummaryEndpoint:
+    """Test global dashboard summary endpoint."""
+
+    def test_returns_200(self):
+        resp = client.get("/api/overview/summary")
+        assert resp.status_code == 200
+
+    def test_returns_required_keys(self):
+        resp = client.get("/api/overview/summary")
+        data = resp.json()
+        assert isinstance(data, dict)
+        assert "total_patients" in data
+        assert "table_counts" in data
+        assert "audit_log" in data
+        assert "data_passports" in data
+
+    def test_table_counts_is_dict(self):
+        resp = client.get("/api/overview/summary")
+        data = resp.json()
+        assert isinstance(data["table_counts"], dict)
+
+    def test_audit_log_has_subfields(self):
+        resp = client.get("/api/overview/summary")
+        data = resp.json()
+        audit = data["audit_log"]
+        assert "total" in audit
+        assert "critical" in audit
+        assert "quarantined" in audit
+        assert "auto_corrected" in audit
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

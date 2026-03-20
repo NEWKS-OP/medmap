@@ -855,6 +855,24 @@ class DataMapper:
             by_type.get("nursing", [])
         )
 
+        # Validate FK integrity: drop rows with coCaseId not in tbCaseData
+        case_df = self.mapped_tables.get("tbCaseData")
+        if case_df is not None and not case_df.empty and "coId" in case_df.columns:
+            valid_case_ids = set(case_df["coId"].dropna().unique())
+            fk_tables = [t for t in self.mapped_tables if t != "tbCaseData"]
+            for table_name in fk_tables:
+                df = self.mapped_tables[table_name]
+                if df is not None and not df.empty and "coCaseId" in df.columns:
+                    before = len(df)
+                    orphan_mask = df["coCaseId"].notna() & ~df["coCaseId"].isin(valid_case_ids)
+                    n_orphans = orphan_mask.sum()
+                    if n_orphans > 0:
+                        self.mapped_tables[table_name] = df[~orphan_mask].copy()
+                        logger.warning(
+                            "FK cleanup: dropped %d rows from %s with orphan coCaseId values",
+                            n_orphans, table_name,
+                        )
+
         # Summary
         for table_name, df in self.mapped_tables.items():
             if df is not None and not df.empty:

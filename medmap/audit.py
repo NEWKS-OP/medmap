@@ -437,14 +437,22 @@ def audit_database(result):
 
         # Check FK integrity: coCaseId in child tables references tbCaseData
         # Child tables store numeric coCaseId (FK to coId) while tbCaseData
-        # has both coId (numeric) and coCaseIdAlpha (string)
+        # has both coId (numeric), coCaseIdAlpha (string), coPatientId, and coE2I222
         if "tbCaseData" in tables:
-            cursor.execute("SELECT DISTINCT coCaseIdAlpha FROM tbCaseData WHERE coCaseIdAlpha IS NOT NULL")
-            valid_alpha_ids = {row["coCaseIdAlpha"] for row in cursor.fetchall()}
-            cursor.execute("SELECT DISTINCT coId FROM tbCaseData WHERE coId IS NOT NULL")
-            valid_numeric_ids = {row["coId"] for row in cursor.fetchall()}
-            # Also add string versions of numeric IDs for mixed comparisons
-            valid_case_ids = valid_alpha_ids | valid_numeric_ids | {str(v) for v in valid_numeric_ids}
+            valid_case_ids = set()
+            for id_col in ("coId", "coE2I222", "coPatientId"):
+                try:
+                    cursor.execute(f"SELECT DISTINCT [{id_col}] FROM tbCaseData WHERE [{id_col}] IS NOT NULL")
+                    col_ids = {row[id_col] for row in cursor.fetchall()}
+                    valid_case_ids.update(col_ids)
+                    valid_case_ids.update(str(v) for v in col_ids)
+                except sqlite3.OperationalError:
+                    pass  # column may not exist
+            try:
+                cursor.execute("SELECT DISTINCT coCaseIdAlpha FROM tbCaseData WHERE coCaseIdAlpha IS NOT NULL")
+                valid_case_ids.update(row["coCaseIdAlpha"] for row in cursor.fetchall())
+            except sqlite3.OperationalError:
+                pass
 
             fk_tables = [
                 "tbImportLabsData", "tbImportIcd10Data",

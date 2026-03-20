@@ -59,7 +59,7 @@ def extract_pain_level(text: str) -> Optional[int]:
         val = int(m.group(1))
         if 0 <= val <= 10:
             return val
-        return min(val, 10)
+        return max(0, min(val, 10))
 
     # Try qualitative
     m = _PAIN_QUAL_RE.search(text)

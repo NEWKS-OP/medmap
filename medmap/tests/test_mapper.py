@@ -323,7 +323,7 @@ class TestToStringColumns:
     def test_preserves_none(self, mapper):
         df = pd.DataFrame({"val": [1.0, None, float("nan")]})
         result = mapper._to_string_columns(df)
-        assert result["val"].iloc[0] == "1.0"
+        assert result["val"].iloc[0] == "1"  # 1.0 -> "1" (integer float conversion)
         assert result["val"].iloc[1] is None
         assert result["val"].iloc[2] is None
 

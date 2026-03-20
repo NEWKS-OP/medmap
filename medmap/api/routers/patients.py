@@ -601,3 +601,42 @@ async def get_patient_passports(case_id: str) -> list[dict]:
     except Exception as e:
         logger.error("get_patient_passports error: %s", e)
         return []
+
+
+@router.get("/{case_id}/sbar")
+async def get_patient_sbar(case_id: str) -> dict:
+    """Generate an SBAR clinical handoff note for a patient using AI."""
+    db = get_db()
+    try:
+        from pipeline.agents.clinical_reasoner import generate_sbar
+        sbar = generate_sbar(case_id, db)
+        return {"case_id": case_id, "sbar": sbar}
+    except Exception as e:
+        logger.error("get_patient_sbar error: %s", e)
+        return {"case_id": case_id, "sbar": {"S": "Error generating SBAR", "B": str(e), "A": "", "R": ""}}
+
+
+@router.get("/{case_id}/explain-alert/{rule_name}")
+async def explain_patient_alert(case_id: str, rule_name: str) -> dict:
+    """Get a physiological explanation for a clinical alert."""
+    db = get_db()
+    try:
+        from pipeline.agents.clinical_reasoner import explain_anomaly
+
+        # Try to get triggered values from the alerts cache
+        triggered_values = {}
+        try:
+            from api.routers.alerts import _get_alerts
+            alerts = _get_alerts(db)
+            for a in alerts:
+                if a["case_id"] == case_id and a["rule_name"] == rule_name:
+                    triggered_values = a.get("triggered_values", {})
+                    break
+        except Exception:
+            pass
+
+        explanation = explain_anomaly(rule_name, triggered_values, case_id)
+        return {"case_id": case_id, "rule_name": rule_name, "explanation": explanation}
+    except Exception as e:
+        logger.error("explain_patient_alert error: %s", e)
+        return {"case_id": case_id, "rule_name": rule_name, "explanation": str(e)}

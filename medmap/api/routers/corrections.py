@@ -172,3 +172,26 @@ async def rollback_correction(body: dict = Body(default={})) -> dict:
 async def get_history() -> list[dict]:
     """Get the full history of applied corrections and rollbacks."""
     return get_correction_history_list()
+
+
+@router.get("/repair-proposals")
+async def get_repair_proposals(limit: int = 100) -> list[dict]:
+    """Get AI-proposed repairs for quarantined data values.
+
+    Uses the Data Repair agent to analyze quarantined passports and propose fixes."""
+    db = get_db()
+    try:
+        from pipeline.agents.data_repair import DataRepairAgent
+
+        agent = DataRepairAgent()
+        context = {"db_conn": db}
+        result = agent.run(context)
+
+        proposals = context.get("repair_proposals", [])
+        # Only return proposals with actual repairs
+        actionable = [p for p in proposals if p.get("proposed_value") is not None]
+        return actionable[:limit]
+
+    except Exception as e:
+        logger.error("repair proposals error: %s", e)
+        return []

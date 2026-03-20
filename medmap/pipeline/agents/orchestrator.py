@@ -17,6 +17,10 @@ from pipeline.mapper import DataMapper
 from pipeline.sql_export import SQLExporter
 from pipeline.nlp import NursingNLPAnalyzer
 from pipeline.anomaly import AnomalyDetector
+from pipeline.agents.schema_detective import SchemaDetectiveAgent
+from pipeline.agents.validation_agent import ValidationAgent
+from pipeline.agents.supervisor import SupervisorAgent
+from pipeline.agents.data_repair import DataRepairAgent
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +43,7 @@ class PipelineOrchestrator:
                       include_split: bool = True) -> Generator[PipelineProgress, None, None]:
         """Run the full pipeline, yielding progress updates."""
         start_time = time.time()
-        total_steps = 7
+        total_steps = 8
         errors = []
 
         try:
@@ -69,18 +73,63 @@ class PipelineOrchestrator:
                 current_step="Ingestion complete",
                 step_number=1,
                 total_steps=total_steps,
-                progress_pct=0.2,
+                progress_pct=0.12,
                 step_detail=f"Loaded {total_files} files",
                 errors=errors.copy(),
             )
 
-            # Step 2: Validation
+            # Step 2: Agent Analysis (detective → validator → supervisor)
+            yield PipelineProgress(
+                status=PipelineStatus.RUNNING,
+                current_step="Agent analysis (schema detective)",
+                step_number=2,
+                total_steps=total_steps,
+                progress_pct=0.15,
+                step_detail="Analyzing columns and proposing mappings",
+            )
+
+            agent_detail = ""
+            try:
+                agent_context = {"dataframes": self.ingester.dataframes}
+
+                detective = SchemaDetectiveAgent()
+                det_result = detective.run(agent_context)
+
+                validator_agent = ValidationAgent()
+                val_result = validator_agent.run(agent_context)
+
+                supervisor = SupervisorAgent()
+                sup_result = supervisor.run(agent_context)
+
+                stats = agent_context.get("agent_stats", {})
+                agent_detail = (
+                    f"{stats.get('total_columns', 0)} columns: "
+                    f"{stats.get('auto_mapped', 0)} auto, "
+                    f"{stats.get('conflicts', 0)} conflicts, "
+                    f"{stats.get('escalated', 0)} escalated"
+                )
+            except Exception as e:
+                logger.warning("Agent analysis failed (non-fatal): %s", e)
+                agent_detail = f"Skipped: {e}"
+                errors.append(f"Agents: {e}")
+
+            yield PipelineProgress(
+                status=PipelineStatus.RUNNING,
+                current_step="Agent analysis complete",
+                step_number=2,
+                total_steps=total_steps,
+                progress_pct=0.20,
+                step_detail=agent_detail,
+                errors=errors.copy(),
+            )
+
+            # Step 3: Validation
             yield PipelineProgress(
                 status=PipelineStatus.RUNNING,
                 current_step="Validating data",
-                step_number=2,
+                step_number=3,
                 total_steps=total_steps,
-                progress_pct=0.2,
+                progress_pct=0.25,
                 step_detail="Running validation rules",
             )
 
@@ -89,20 +138,20 @@ class PipelineOrchestrator:
             yield PipelineProgress(
                 status=PipelineStatus.RUNNING,
                 current_step="Validation complete",
-                step_number=2,
+                step_number=3,
                 total_steps=total_steps,
-                progress_pct=0.4,
+                progress_pct=0.35,
                 step_detail=f"Validated {len(quality_scores)} sources",
                 errors=errors.copy(),
             )
 
-            # Step 3: Cleaning
+            # Step 4: Cleaning
             yield PipelineProgress(
                 status=PipelineStatus.RUNNING,
                 current_step="Cleaning data",
-                step_number=3,
+                step_number=4,
                 total_steps=total_steps,
-                progress_pct=0.4,
+                progress_pct=0.35,
                 step_detail="Normalizing dates, IDs, values",
             )
 
@@ -113,18 +162,18 @@ class PipelineOrchestrator:
             yield PipelineProgress(
                 status=PipelineStatus.RUNNING,
                 current_step="Cleaning complete",
-                step_number=3,
+                step_number=4,
                 total_steps=total_steps,
-                progress_pct=0.5,
+                progress_pct=0.45,
                 step_detail=f"Cleaned {len(clean_dfs)} files, {len(pid_conflicts)} PID conflicts",
                 errors=errors.copy(),
             )
 
-            # Step 4: NLP Analysis (nursing notes)
+            # Step 5: NLP Analysis (nursing notes)
             yield PipelineProgress(
                 status=PipelineStatus.RUNNING,
                 current_step="Analyzing nursing notes (NLP)",
-                step_number=4,
+                step_number=5,
                 total_steps=total_steps,
                 progress_pct=0.5,
                 step_detail="Extracting pain, mobility, wounds, deterioration",
@@ -147,18 +196,18 @@ class PipelineOrchestrator:
             yield PipelineProgress(
                 status=PipelineStatus.RUNNING,
                 current_step="NLP analysis complete",
-                step_number=4,
+                step_number=5,
                 total_steps=total_steps,
                 progress_pct=0.6,
                 step_detail=nlp_detail,
                 errors=errors.copy(),
             )
 
-            # Step 5: Mapping
+            # Step 6: Mapping
             yield PipelineProgress(
                 status=PipelineStatus.RUNNING,
                 current_step="Mapping to target schema",
-                step_number=5,
+                step_number=6,
                 total_steps=total_steps,
                 progress_pct=0.6,
                 step_detail="Mapping to 7 SQL tables",
@@ -174,18 +223,18 @@ class PipelineOrchestrator:
             yield PipelineProgress(
                 status=PipelineStatus.RUNNING,
                 current_step="Mapping complete",
-                step_number=5,
+                step_number=6,
                 total_steps=total_steps,
                 progress_pct=0.8,
                 step_detail=f"Mapped {sum(len(df) for df in mapped.values() if df is not None and not df.empty)} total rows",
                 errors=errors.copy(),
             )
 
-            # Step 6: SQL Export
+            # Step 7: SQL Export
             yield PipelineProgress(
                 status=PipelineStatus.RUNNING,
                 current_step="Exporting to SQLite",
-                step_number=6,
+                step_number=7,
                 total_steps=total_steps,
                 progress_pct=0.8,
                 step_detail="Creating database and inserting data",
@@ -194,11 +243,11 @@ class PipelineOrchestrator:
             audit_log = self.cleaner.get_audit_log()
             export_summary = self.exporter.export_all(mapped, audit_log)
 
-            # Step 7: Anomaly Detection
+            # Step 8: Anomaly Detection
             yield PipelineProgress(
                 status=PipelineStatus.RUNNING,
                 current_step="Running anomaly detection",
-                step_number=7,
+                step_number=8,
                 total_steps=total_steps,
                 progress_pct=0.9,
                 step_detail="Correlating labs, motion, meds, nursing",
@@ -222,7 +271,7 @@ class PipelineOrchestrator:
             yield PipelineProgress(
                 status=PipelineStatus.RUNNING,
                 current_step="Anomaly detection complete",
-                step_number=7,
+                step_number=8,
                 total_steps=total_steps,
                 progress_pct=0.95,
                 step_detail=anomaly_detail,
@@ -259,7 +308,7 @@ class PipelineOrchestrator:
             yield PipelineProgress(
                 status=PipelineStatus.COMPLETED,
                 current_step="Pipeline complete",
-                step_number=7,
+                step_number=8,
                 total_steps=total_steps,
                 progress_pct=1.0,
                 step_detail=f"Exported {export_summary.get('total_rows', 0)} rows, {anomaly_count} alerts in {elapsed:.1f}s",

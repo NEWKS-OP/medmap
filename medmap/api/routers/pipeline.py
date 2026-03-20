@@ -105,9 +105,48 @@ async def get_progress() -> dict:
 
 @router.get("/stats")
 async def get_stats() -> dict:
-    """Get pipeline statistics after completion including error counts."""
+    """Get pipeline statistics after completion including error counts.
+
+    If no pipeline has been run in this session, reads actual row counts
+    from the database so the stats reflect the current DB state.
+    """
     stats = pipeline_state.get_stats()
-    if stats is None:
+    if stats is not None:
+        return asdict(stats)
+
+    # No pipeline run this session — read stats from the existing DB
+    try:
+        from api.dependencies import get_db
+        db = get_db()
+        cursor = db.cursor()
+
+        table_counts = {}
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        for row in cursor.fetchall():
+            name = row["name"]
+            if name.startswith("tb") and name != "sqlite_sequence":
+                count = cursor.execute(f"SELECT COUNT(*) FROM [{name}]").fetchone()[0]
+                table_counts[name] = count
+
+        total_rows = sum(table_counts.values())
+        rows_imported = total_rows - table_counts.get("tbAuditLog", 0) - table_counts.get("tbDataPassport", 0)
+        sources_processed = table_counts.get("tbCaseData", 0)
+
+        return {
+            "sources_processed": sources_processed,
+            "total_rows": total_rows,
+            "rows_imported": rows_imported,
+            "rows_quarantined": 0,
+            "errors_by_category": {},
+            "errors_by_dataset": {},
+            "critical_alerts": [],
+            "ward_scores": {},
+            "processing_time_seconds": 0.0,
+            "top_patient_risk": None,
+            "table_counts": table_counts,
+        }
+    except Exception as e:
+        logger.warning("Failed to read DB stats: %s", e)
         return {
             "sources_processed": 0, "total_rows": 0,
             "rows_imported": 0, "rows_quarantined": 0,
@@ -115,7 +154,6 @@ async def get_stats() -> dict:
             "critical_alerts": [], "ward_scores": {},
             "processing_time_seconds": 0.0, "top_patient_risk": None,
         }
-    return asdict(stats)
 
 
 @router.get("/streaming-progress")

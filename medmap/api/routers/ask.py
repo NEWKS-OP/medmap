@@ -15,7 +15,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(responses={200: {"description": "Query results"}})
 
 # Simple keyword-to-SQL patterns for offline fallback
-# Format: (keywords_list, sql_query)
 SQL_PATTERNS = [
     (["fall", "chute", "sturz"], "SELECT d.coCaseId, c.coCaseIdAlpha, d.coTimestamp, d.coFall_event_0_1, d.coImpact_magnitude_g, d.coPost_fall_immobility_minutes FROM tbImportDeviceMotionData d LEFT JOIN tbCaseData c ON c.coId = d.coCaseId WHERE d.coFall_event_0_1 = '1' LIMIT 50"),
     (["medication", "medic", "drug"], "SELECT m.coCaseId, c.coCaseIdAlpha, m.coMedication_name, m.coDose, m.coFrequency, m.administration_status FROM tbImportMedicationInpatientData m LEFT JOIN tbCaseData c ON c.coId = m.coCaseId LIMIT 50"),
@@ -36,6 +35,8 @@ SQL_PATTERNS = [
     (["corrected", "repair", "fix", "korrektur"], "SELECT error_type, action_taken, COUNT(*) as cnt FROM tbAuditLog WHERE action_taken IN ('AUTO_CORRECT', 'MANUAL_CORRECT') GROUP BY error_type, action_taken ORDER BY cnt DESC"),
     (["assessment", "epaac", "epa", "bewertung"], "SELECT a.coCaseId, c.coCaseIdAlpha, COUNT(*) as nb_assessments FROM tbImportAcData a LEFT JOIN tbCaseData c ON c.coId = a.coCaseId GROUP BY a.coCaseId ORDER BY nb_assessments DESC LIMIT 50"),
     (["motion", "movement", "bewegung", "device", "sensor"], "SELECT d.coCaseId, c.coCaseIdAlpha, AVG(CAST(d.coMovement_index_0_100 AS FLOAT)) as avg_movement, SUM(CASE WHEN d.coFall_event_0_1 = '1' THEN 1 ELSE 0 END) as falls FROM tbImportDeviceMotionData d LEFT JOIN tbCaseData c ON c.coId = d.coCaseId GROUP BY d.coCaseId ORDER BY falls DESC LIMIT 50"),
+    (["deteriorat", "verschlecht"], "SELECT n.coCaseId, c.coCaseIdAlpha, n.coReport_date, n.coShift, n.coDeterioration_signs, SUBSTR(n.coNursing_note_free_text, 1, 80) as note FROM tbImportNursingDailyReportsData n LEFT JOIN tbCaseData c ON c.coId = n.coCaseId WHERE n.coDeterioration_flag = 1 LIMIT 50"),
+    (["pain", "schmerz", "douleur"], "SELECT n.coCaseId, c.coCaseIdAlpha, n.coReport_date, n.coPain_level_extracted, SUBSTR(n.coNursing_note_free_text, 1, 80) as note FROM tbImportNursingDailyReportsData n LEFT JOIN tbCaseData c ON c.coId = n.coCaseId WHERE n.coPain_level_extracted IS NOT NULL ORDER BY n.coPain_level_extracted DESC LIMIT 50"),
 ]
 
 DEFAULT_SQL = (
@@ -46,10 +47,7 @@ DEFAULT_SQL = (
 
 
 def _question_to_sql(question: str) -> str:
-    """Match question keywords to predefined SQL queries.
-
-    Offline fallback when no LLM API key is available.
-    """
+    """Match question keywords to predefined SQL queries (offline fallback)."""
     q_lower = question.lower()
     for keywords, sql in SQL_PATTERNS:
         if any(kw in q_lower for kw in keywords):
@@ -61,8 +59,7 @@ def _question_to_sql(question: str) -> str:
 async def ask_data(body: dict = Body(default={"question": ""})):
     """Ask a natural language question about the data.
 
-    Uses keyword matching to generate SQL (offline fallback).
-    Returns SQL, results, and narrative answer."""
+    Uses Claude API for SQL generation when available, falls back to keyword matching."""
     db = get_db()
     question = body.get("question", "") if body else ""
 
@@ -70,36 +67,18 @@ async def ask_data(body: dict = Body(default={"question": ""})):
         return {
             "question": "", "sql_generated": "", "results_as_dicts": None,
             "narrative_answer": None, "error": "No question provided",
-            "row_count": 0, "execution_time_ms": 0.0,
+            "row_count": 0, "execution_time_ms": 0.0, "used_llm": False,
         }
 
     start = time.time()
 
     try:
-        sql = _question_to_sql(question)
-        rows = db.execute(sql).fetchall()
-        results = [dict(r) for r in rows]
-        elapsed_ms = (time.time() - start) * 1000
-
-        # Simple narrative
-        narrative = f"Found {len(results)} results."
-        if results:
-            first_keys = list(results[0].keys())
-            if len(first_keys) == 2 and "cnt" in first_keys:
-                lines = [f"- {r[first_keys[0]]}: {r['cnt']:,}" for r in results]
-                narrative = "Here are the counts:\n" + "\n".join(lines)
-
-        entry = {
-            "question": question,
-            "sql_generated": sql,
-            "results_as_dicts": results,
-            "narrative_answer": narrative,
-            "error": None,
-            "row_count": len(results),
-            "execution_time_ms": round(elapsed_ms, 1),
-        }
+        # Use LLM-powered agent
+        from pipeline.agents.data_analyst_agent import ask_data as llm_ask
+        entry = llm_ask(question, db)
         add_ask_history(entry)
-        logger.info("Ask query: %s -> %d results in %.1fms", question[:50], len(results), elapsed_ms)
+        logger.info("Ask query: %s -> %d results in %.1fms (llm=%s)",
+                     question[:50], entry["row_count"], entry["execution_time_ms"], entry.get("used_llm"))
         return entry
 
     except Exception as e:
@@ -113,6 +92,7 @@ async def ask_data(body: dict = Body(default={"question": ""})):
             "error": str(e),
             "row_count": 0,
             "execution_time_ms": round(elapsed_ms, 1),
+            "used_llm": False,
         }
         add_ask_history(entry)
         return entry

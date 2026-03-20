@@ -57,9 +57,17 @@ class TestRouteRegistration:
         routes = self._get_routes()
         assert any("/api/upload" in r for r in routes)
 
+    def test_new_bonus_routes(self):
+        routes = self._get_routes()
+        assert "/api/quality/before-after" in routes
+        assert "/api/quality/error-categories" in routes
+        assert "/api/overview/summary" in routes
+        assert "/api/alerts/export" in routes
+        assert "/api/patients/search" in routes
+
     def test_total_route_count(self):
         routes = self._get_routes()
-        assert len(routes) >= 20
+        assert len(routes) >= 30
 
 
 if __name__ == "__main__":

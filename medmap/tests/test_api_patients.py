@@ -43,5 +43,48 @@ class TestPatientsList:
             assert "case_id" in data[0]
 
 
+class TestPatientSearch:
+    """Test patient search endpoint."""
+
+    def test_returns_200(self):
+        resp = client.get("/api/patients/search?q=test")
+        assert resp.status_code == 200
+
+    def test_returns_list(self):
+        resp = client.get("/api/patients/search?q=test")
+        data = resp.json()
+        assert isinstance(data, list)
+
+    def test_empty_query_returns_empty(self):
+        resp = client.get("/api/patients/search?q=")
+        data = resp.json()
+        assert data == []
+
+
+class TestPatientMotionSummary:
+    """Test patient motion summary endpoint."""
+
+    def test_returns_200(self):
+        resp = client.get("/api/patients/NONEXISTENT/motion-summary")
+        assert resp.status_code == 200
+
+    def test_not_found_returns_zero(self):
+        resp = client.get("/api/patients/NONEXISTENT/motion-summary")
+        data = resp.json()
+        assert data["total_records"] == 0
+
+    def test_has_required_keys(self):
+        # Get a real case_id first
+        patients = client.get("/api/patients?limit=1").json()
+        if patients:
+            cid = patients[0]["case_id"]
+            resp = client.get(f"/api/patients/{cid}/motion-summary")
+            data = resp.json()
+            assert "total_records" in data
+            assert "fall_events" in data
+            assert "bed_exits" in data
+            assert "avg_movement_index" in data
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
