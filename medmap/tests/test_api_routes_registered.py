@@ -13,7 +13,9 @@ class TestRouteRegistration:
     """Verify all expected routes are registered in the app."""
 
     def _get_routes(self):
-        return [r.path for r in app.routes]
+        # Use the OpenAPI schema rather than app.routes: recent FastAPI
+        # versions keep included routers as lazy objects without a .path.
+        return list(app.openapi()["paths"].keys())
 
     def test_health_route(self):
         assert "/health" in self._get_routes()
