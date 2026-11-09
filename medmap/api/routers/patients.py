@@ -233,9 +233,9 @@ async def get_patient_timeline(case_id: str) -> list[dict]:
                 "source_file": None, "alert_message": None,
             })
 
-        # Device motion (limit 100)
+        # Device motion (limit 500, chronological, skip rows without a timestamp)
         for r in db.execute(
-            "SELECT coTimestamp, coMovement_index_0_100, coFall_event_0_1, coBed_exit_detected_0_1 FROM tbImportDeviceMotionData WHERE coCaseId = ? LIMIT 100",
+            "SELECT coTimestamp, coMovement_index_0_100, coFall_event_0_1, coBed_exit_detected_0_1 FROM tbImportDeviceMotionData WHERE coCaseId = ? AND coTimestamp IS NOT NULL AND coTimestamp != '' ORDER BY coTimestamp LIMIT 500",
             (cid,),
         ).fetchall():
             events.append({
@@ -246,7 +246,7 @@ async def get_patient_timeline(case_id: str) -> list[dict]:
 
         # Medications (limit 200) — prefer event-specific timestamps
         for r in db.execute(
-            "SELECT coOrder_start_datetime, administration_datetime, coMedication_name, coDose, coRoute, administration_status, coRecord_type FROM tbImportMedicationInpatientData WHERE coCaseId = ? LIMIT 200",
+            "SELECT coOrder_start_datetime, administration_datetime, coMedication_name, coDose, coRoute, administration_status, coRecord_type FROM tbImportMedicationInpatientData WHERE coCaseId = ? ORDER BY COALESCE(administration_datetime, coOrder_start_datetime) LIMIT 200",
             (cid,),
         ).fetchall():
             ts = r["administration_datetime"] or r["coOrder_start_datetime"] or ""
