@@ -40,20 +40,21 @@ Every change is logged twice: in `tbAuditLog` (old value, new value, rule, sever
 
 **API** (`medmap/api/`): FastAPI, about 45 endpoints, with docs at `http://localhost:8000/docs`.
 
-**Dashboard** (`frontend/`): Next.js + Recharts, connected to the API.
+**Dashboard** (`frontend/`): **MediFlow**, a Next.js + shadcn/ui + Recharts app connected to the API. Its aggregates come from `/api/dashboard/*`.
 
 | Page | Purpose |
 |---|---|
-| Overview | Row counts in the unified model, lowest-quality sources, quality by ward, and a button to re-run the pipeline. |
-| Sources & quality | Every input file with its score, imported, quarantined and auto-fixed rows, issue types, and field completeness after cleaning. |
-| Data lineage | The audit log, filterable by file and severity: original value → cleaned value, and why. |
-| Patients | A per-case **trajectory**: labs, medication, nursing notes, falls and movement on one time axis, plus labs, notes, a risk score, an SBAR handover and the case's lineage. |
-| Alerts | Cross-source alerts, filterable by rule. Alerts can be marked as treated. |
-| Corrections | A review queue for critical issues. Save a value or roll it back. Every action is written to the audit log. |
+| Overview | KPIs (cases, clinical alerts, weighted data-quality score, rows imported, auto-corrected values, values awaiting review), movement, falls and bed exits by hour from the motion sensors, data issues by source, active cross-source alerts, admissions per day, patients per ward. |
+| Patients | A monitor table with the first lab panel (flags from the source systems), falls, alerts and data issues per case. Each row opens the **patient trajectory**: labs, medication, nursing notes, falls and movement on one time axis, plus labs, notes, a risk breakdown, an SBAR handover and the case's lineage. |
+| Data Quality | Alert breakdown, lowest-quality sources, issue types by severity, imported vs quarantined rows per clinic, and a score for every input file. |
+| Audit Trail | Every change the pipeline made, filterable by severity. Quarantined values can be fixed and corrections rolled back, and each action is written to the audit log. |
+
+Sign-in is a demo screen: any email with an `@` works.
 
 | | |
 |---|---|
-| ![Overview](docs/screenshots/overview.png) | ![Sources](docs/screenshots/sources.png) |
+| ![Overview](docs/screenshots/overview.png) | ![Patient monitor](docs/screenshots/patient-monitor.png) |
+| ![Data quality](docs/screenshots/data-quality.png) | ![Audit trail](docs/screenshots/audit-trail.png) |
 
 ## Running it locally
 
@@ -79,7 +80,7 @@ npm run dev                     # http://localhost:3000
 
 Or start everything with Docker: `docker compose up --build`.
 
-Tests: `cd medmap && python -m pytest tests` (1,546 tests).
+Tests: `cd medmap && python -m pytest tests` (1,550 tests).
 
 ### Offline by default
 
@@ -100,4 +101,4 @@ Everything except three optional features runs without network access. "Ask your
   - ward names normalized (noise characters such as `Chirurgie@` or `Kardiologieü`, and ICD codes that ended up in the ward column),
   - SBAR lab labels no longer mangled ("Glucose" was rendered as "Gluse"),
   - patient timeline returns sensor and medication events in chronological order,
-  - new `frontend/` connected to the API, plus Docker setup for it.
+  - MediFlow frontend (built for the hackathon on mock data) connected to the API through new `/api/dashboard` endpoints, with a patient trajectory page and an audit trail with fix and rollback; Geist font served locally so the app builds offline; Docker setup for the frontend.
