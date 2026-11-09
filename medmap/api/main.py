@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.dependencies import close_db
 from api.routers import (
+    dashboard,
     pipeline,
     upload,
     overview,
@@ -52,6 +53,7 @@ app.include_router(alerts.router, prefix="/api/alerts", tags=["alerts"])
 app.include_router(quality.router, prefix="/api/quality", tags=["quality"])
 app.include_router(ask.router, prefix="/api/ask", tags=["ask"])
 app.include_router(corrections.router, prefix="/api/corrections", tags=["corrections"])
+app.include_router(dashboard.router, prefix="/api/dashboard", tags=["dashboard"])
 
 
 @app.get("/")

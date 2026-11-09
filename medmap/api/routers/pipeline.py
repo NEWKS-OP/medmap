@@ -46,6 +46,11 @@ def _run_pipeline_thread(data_folder: str):
             invalidate_alerts_cache()
         except Exception as cache_err:
             logger.warning("Failed to invalidate alerts cache: %s", cache_err)
+        try:
+            from api.routers.dashboard import invalidate_dashboard_cache
+            invalidate_dashboard_cache()
+        except Exception as cache_err:
+            logger.warning("Failed to invalidate dashboard cache: %s", cache_err)
 
     except Exception as e:
         logger.error("Pipeline thread failed: %s", e, exc_info=True)
