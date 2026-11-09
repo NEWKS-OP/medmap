@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   backend:
     build: ./medmap
@@ -7,14 +6,16 @@ services:
     volumes:
       - ./medmap/data:/app/data
     env_file:
-      - ./medmap/.env
+      - path: ./medmap/.env
+        required: false
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        # Called from the browser, so it must be reachable from the host, not "backend".
+        NEXT_PUBLIC_API_URL: http://localhost:8000
     ports:
       - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://backend:8000
-      - NEXT_PUBLIC_USE_MOCKS=false
     depends_on:
       - backend
