@@ -208,7 +208,9 @@ def _generate_sbar_template(case_id: str, ctx: dict) -> dict:
 
     b_parts = []
     if labs:
-        abnormal = [f"{k.replace('co', '').replace('_', ' ')}={v}" for k, v in labs.items() if v]
+        # Strip only the leading "co" column prefix ("coGlucose_mg_dL" -> "Glucose mg dL");
+        # a plain replace('co', '') also mangled names like Glucose -> "Gluse".
+        abnormal = [f"{(k[2:] if k.startswith('co') else k).replace('_', ' ')}={v}" for k, v in labs.items() if v]
         if abnormal:
             b_parts.append(f"Latest labs: {', '.join(abnormal[:5])}")
     if meds:
