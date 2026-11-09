@@ -42,6 +42,18 @@ PID_PREFIX_MAP = {
 # Special characters to strip from numeric fields
 SPECIAL_CHARS_PATTERN = re.compile(r'[üäöß^@$%#&*!?+=\[\]{}|\\/<>~`]', re.IGNORECASE)
 
+# Ward / station columns (raw headers vary by source and clinic)
+WARD_COLUMN_NAMES = {"ward", "station"}
+
+# Canonical ward names found in the clean reference data
+CANONICAL_WARDS = [
+    "Chirurgie", "Geriatrie", "Innere Medizin", "Intensivstation",
+    "Kardiologie", "Neurologie", "Pneumologie",
+]
+
+# Values that look like an ICD-10 code (signals a shifted column, not a ward)
+ICD10_PATTERN = re.compile(r'^[A-Z][0-9]{2}(\.[0-9A-Z]{1,4})?$')
+
 # Lab flag columns
 LAB_FLAG_COLUMNS = [
     "sodium_flag", "potassium_flag", "creatinine_flag", "egfr_flag",
@@ -124,6 +136,9 @@ class DataCleaner:
 
         # 2.12 Normalize event types (medication)
         df = self._normalize_event_types(df, source_file, file_type)
+
+        # 2.13 Normalize ward names (strip injected noise, reject shifted ICD codes)
+        df = self._normalize_wards(df, source_file, file_type)
 
         # Preserve attrs
         df.attrs = {**df.attrs, "source_file": source_file, "file_type": file_type}
@@ -737,6 +752,51 @@ class DataCleaner:
     # ──────────────────────────────────────────────
     # HELPERS
     # ──────────────────────────────────────────────
+
+    # ──────────────────────────────────────────────
+    # 2.13 WARD NORMALIZATION
+    # ──────────────────────────────────────────────
+
+    def _normalize_wards(self, df, source_file, file_type):
+        """Normalize ward/station names.
+
+        Dirty sources append noise characters to ward names ("Chirurgie@",
+        "Kardiologieü", "Chirurgie\\t"), and some clinics ship shifted columns
+        where the ward field holds an ICD-10 code. Noise is stripped and the
+        value is matched to a canonical ward; ICD codes are quarantined.
+        """
+        canonical = {w.lower(): w for w in CANONICAL_WARDS}
+        for col in df.columns:
+            if str(col).strip().lower() not in WARD_COLUMN_NAMES:
+                continue
+            for idx in df.index:
+                val = df.at[idx, col]
+                if val is None or (isinstance(val, float) and np.isnan(val)):
+                    continue
+                raw = str(val)
+                stripped = raw.strip()
+                if ICD10_PATTERN.match(SPECIAL_CHARS_PATTERN.sub("", stripped).upper()):
+                    self._log_change(
+                        source_file, df, idx, file_type, col,
+                        raw, None,
+                        "WARD_INVALID", Severity.HIGH, ActionTaken.QUARANTINE,
+                    )
+                    df.at[idx, col] = np.nan
+                    continue
+                cleaned = stripped
+                if cleaned.lower() not in canonical:
+                    # Strip trailing noise characters one by one
+                    while cleaned and (cleaned[-1] in "üäöÜÄÖß^@$%#&*!?+=[]{}|\\/<>~`" or cleaned[-1].isspace()):
+                        cleaned = cleaned[:-1]
+                cleaned = canonical.get(cleaned.lower(), cleaned)
+                if cleaned != raw:
+                    self._log_change(
+                        source_file, df, idx, file_type, col,
+                        raw, cleaned or None,
+                        "WARD_NORMALIZED", Severity.LOW, ActionTaken.AUTO_CORRECT,
+                    )
+                    df.at[idx, col] = cleaned or np.nan
+        return df
 
     def _log_change(self, source_file, df, idx, file_type, col,
                     original, cleaned, error_type, severity, action_taken):
